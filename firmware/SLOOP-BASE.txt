@@ -1,0 +1,2 @@
+d315ad88c5fbaad232ce9426b06db66395bd87db Tue Oct 13 19:56:21 2026 -0400
+sloop-fm1 main (firmware = v2.6)
