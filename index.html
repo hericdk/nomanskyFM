@@ -1,0 +1,911 @@
+<!doctype html>
+<!-- No Man Sky FM launch page + installer (the panel at the top; tools/instalador.py injects the script and the package). Made by tools/make_site.py. media/: clips of the real screen, cut from the launch video's take. -->
+<html lang="en" data-l="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-8CREY6XFYZ"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  (function () {
+    var ck = null; try { ck = localStorage.getItem("nms.cookies"); } catch (e) {}
+    gtag("consent", "default", { analytics_storage: ck === "yes" ? "granted" : "denied", ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied" });
+    gtag("js", new Date());
+    if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) gtag("config", "G-8CREY6XFYZ");     /* local tests never count as visits */
+  })();
+</script>
+<title>No Man Sky FM · a space adventure for the M-VAVE FM-1</title>
+<meta name="description" content="No Man Sky FM: a free, experimental firmware for the M-VAVE FM-1. Fly between planets with two knobs, land, mine, fight robots, warp between stars, and make the soundtrack of your journey.">
+<link rel="icon" href="assets/logo.png">
+<style>
+  @font-face { font-family: "Pixelify Sans"; src: url(assets/PixelifySans-400.ttf) format("truetype"); font-display: swap; }
+  :root { --bg: #07060d; --bg2: #110f22; --line: #28244a; --txt: #d8d6ea; --dim: #8c88aa; --gold: #ffeb00; --org: #d65432; --org2: #ff8a5c; --grn: #00e800;
+          --blu: #006ea0; --pur: #53268d; --red: #ff0046;
+          --k1: #006ea0; --k2: #009043; --k3: #53268d; --k4: #d65432; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--txt); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  html[data-l="en"] [lang="pt"], html[data-l="pt"] [lang="en"] { display: none; }
+  a { color: var(--gold); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  .px { font-family: "Pixelify Sans", ui-monospace, monospace; letter-spacing: .02em; }
+
+  /* top */
+  header.top { display: flex; justify-content: space-between; align-items: center; padding: 18px 0; }
+  header.top .name { font: 600 22px "Pixelify Sans", monospace; color: var(--gold); text-decoration: none; display: flex; gap: 10px; align-items: center; }
+  header.top .name i { width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ff8a5c, var(--org) 45%, var(--pur)); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--gold); }
+  /* the top bar's right side: the credit, the networks (their notes on hover, as on the FM1 Quest page), the languages */
+  .tr { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  .credit { position: relative; font: 12px/1 "Pixelify Sans", monospace; color: var(--dim); padding: 6px 10px; border: 1px solid var(--gold); border-radius: 6px;
+            transition: color .25s, border-color .25s .4s; white-space: nowrap; }
+  .credit a { color: inherit; text-decoration: none; }
+  .credit .ph { width: 14px; height: 12px; fill: #e8303c; shape-rendering: crispEdges; vertical-align: -2px; margin: 0 2px; }   /* (a heart in pixels) */
+  .credit .sep { opacity: .5; margin: 0 2px; }
+  .credit a:hover { text-decoration: underline; }
+  .credit::before, .credit::after { content: ""; position: absolute; left: -1px; right: -1px; height: 1px; background: #fff; transform: scaleX(0); transform-origin: left; pointer-events: none; }
+  .credit::before { top: -1px; } .credit::after { bottom: -1px; }
+  .credit:hover { color: #fff; border-color: transparent; }
+  .credit:hover::before, .credit:hover::after { animation: crsweep .9s cubic-bezier(.16, 1, .3, 1) forwards; }
+  @keyframes crsweep { 0% { transform: scaleX(0); opacity: 1; } 50% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+  .soc { display: flex; gap: 6px; }
+  .sw { position: relative; display: inline-flex; }
+  .ib { display: inline-grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 8px; color: var(--txt); transition: background .2s, color .2s; }
+  .ib:hover { background: var(--line); color: #fff; }
+  .ib svg { width: 17px; height: 17px; fill: currentColor; }
+  .tip { display: none; position: absolute; top: calc(100% + 10px); right: -8px; width: min(300px, 82vw); background: var(--bg2); border: 1px solid var(--gold); border-radius: 8px;
+         padding: 12px 14px; font-size: 13px; line-height: 1.45; color: var(--txt); z-index: 80; text-align: left; box-shadow: 0 10px 30px #0009; }
+  .tip b { color: var(--org2); font-size: 15px; }
+  .sw:hover .tip, .sw:focus-within .tip { display: block; }
+  @media (max-width: 640px) { header.top { flex-wrap: wrap; gap: 10px; } .tr { width: 100%; justify-content: space-between; } }
+  .lang { display: flex; gap: 2px; border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+  .lang button { font: 13px "Pixelify Sans", monospace; background: none; color: var(--dim); border: 0; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+  .lang button[aria-pressed="true"] { background: var(--line); color: #fff; }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 24px; align-items: center; max-width: 860px; margin: 0 auto; padding: 8px 0 22px; }
+  .hero img { width: 170px; image-rendering: pixelated; border-radius: 6px; }
+  .hero h1 { font: 400 clamp(26px, 4vw, 36px)/1.15 "Pixelify Sans", monospace; color: #fff; margin: 0 0 8px; }
+  .hero p { color: #b8b8c8; margin: 0; }
+  @media (max-width: 560px) { .hero { grid-template-columns: 96px minmax(0, 1fr); gap: 14px; } .hero img { width: 96px; } .hero p { font-size: 15px; } }
+  .btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn { font: 16px "Pixelify Sans", monospace; text-decoration: none; padding: 12px 22px; border-radius: 8px; border: 1px solid var(--line); color: var(--txt); background: var(--bg2); }
+  .btn.main { background: var(--org); border-color: var(--org); color: #1a0d02; }
+  .btn:hover { border-color: var(--org2); }
+
+  .film { margin: 10px auto 0; max-width: 860px; }
+  .film video { width: 100%; display: block; border-radius: 10px; border: 1px solid var(--line); background: #000; }
+  .note { color: var(--dim); font-size: 14px; text-align: center; margin: 10px 0 0; }
+
+  /* features: the clip left, what it does and how to get there right */
+  section.feats { padding: 56px 0 10px; }
+  h2 { font: 400 28px "Pixelify Sans", monospace; color: var(--gold); margin: 0 0 6px; }
+  .sub { color: var(--dim); margin: 0 0 28px; }
+  .feat { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 30px; align-items: center; padding: 26px 0; border-top: 1px solid var(--line); }
+  .feat video { width: 260px; height: 260px; display: block; image-rendering: pixelated; border-radius: 8px; border: 1px solid var(--line); background: #000; }
+  .feat h3 { font: 400 24px "Pixelify Sans", monospace; color: #fff; margin: 0 0 6px; display: flex; gap: 10px; align-items: baseline; }
+  .feat h3 small { font-size: 13px; color: var(--org2); }
+  .feat p { margin: 0 0 14px; color: #c4c4d4; }
+  .keys { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; font-size: 15px; }
+  kbd { font: 13px "Pixelify Sans", monospace; color: #fff; background: #1e1f33; border: 1px solid var(--c, #44465e); border-bottom-width: 2px; border-radius: 5px; padding: 2px 8px; white-space: nowrap; justify-self: start; align-self: start; }
+  .keys span { color: #b4b6ca; }
+  @media (max-width: 680px) {
+    .feat { grid-template-columns: 1fr; gap: 14px; }
+    .feat video { width: 100%; height: auto; aspect-ratio: 1; max-width: 360px; }
+  }
+
+  /* install */
+  section.install { padding: 50px 0; }
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 0 0 22px; display: grid; gap: 10px; }
+  .steps li { counter-increment: s; background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px 12px 52px; position: relative; }
+  .steps li::before { content: counter(s); position: absolute; left: 16px; top: 11px; font: 18px "Pixelify Sans", monospace; color: var(--org2); }
+  footer { border-top: 1px solid var(--line); padding: 26px 0 50px; color: var(--dim); font-size: 13px; }
+  footer p { margin: 0 0 8px; }
+  /* the installer, always at the top */
+  .inst { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 0 auto 34px; max-width: 860px; }
+  .ihead { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+  #go { font: 18px "Pixelify Sans", monospace; padding: 14px 26px; border-radius: 8px; border: 1px solid var(--org); background: var(--org); color: #1a0d02; cursor: pointer; }
+  #go:disabled { opacity: .55; cursor: default; }
+  .imeta { flex: 1; min-width: 220px; } .imeta p { margin: 0; }
+  .ver { font: 13px/1.35 "Pixelify Sans", monospace; color: var(--dim); } .ver b { color: var(--org2); font-weight: 400; }
+  .prog { display: flex; gap: 12px; align-items: center; margin: 16px 0 6px; }
+  #bar { flex: 1; height: 14px; appearance: none; -webkit-appearance: none; border: 1px solid var(--line); border-radius: 7px; background: #0b0c16; overflow: hidden; }
+  #bar::-webkit-progress-bar { background: #0b0c16; } #bar::-webkit-progress-value { background: linear-gradient(90deg, var(--org), var(--org2)); }
+  #bar::-moz-progress-bar { background: linear-gradient(90deg, var(--org), var(--org2)); }
+  #pct { font: 15px "Pixelify Sans", monospace; color: var(--org2); min-width: 44px; text-align: right; }
+  #status { margin: 0; min-height: 1.6em; color: #fff; font: 16px "Pixelify Sans", monospace; }
+  .small { font-size: 14px; color: var(--dim); } .iline { margin: 10px 0 0; }
+  details { margin: 12px 0; } summary { cursor: pointer; color: var(--gold); }
+  pre#log { background: #0b0c16; border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; max-height: 220px; overflow: auto; }
+  /* the 3D simulator */
+  section.simsec { padding: 46px 0 0; }
+  .simwrap { background: transparent; }
+  #simframe { display: block; width: 100%; height: 520px; border: 0; background: transparent; }
+  /* the cookie notice (Google Analytics only, as on the FM1 Quest page) */
+  #ckbar { position: fixed; left: 16px; bottom: 16px; z-index: 120; max-width: min(460px, calc(100vw - 32px)); background: var(--bg2); border: 1px solid var(--org); box-shadow: 0 8px 28px #0008; padding: 14px 16px; font-size: 14px; line-height: 1.45; border-radius: 8px; }
+  #ckbar[hidden] { display: none; }
+  #ckbar p { margin: 0 0 10px; }
+  #ckbar .ckb { display: flex; gap: 8px; flex-wrap: wrap; }
+  #ckbar button { font: 600 14px/1 "Pixelify Sans", monospace; background: var(--bg); color: var(--txt); border: 1px solid var(--org); padding: 9px 14px; cursor: pointer; border-radius: 6px; }
+  #ckbar button#ck-yes { background: var(--org); color: #1a0d02; }
+
+  /* No Man Sky FM: the launch video (YouTube, or a clip until it is out), the shortcuts, SLOOP 2.7.1 */
+  body { background-image: radial-gradient(1px 1px at 20px 30px, #fff8, transparent), radial-gradient(1px 1px at 140px 90px, #ffeb0088, transparent),
+         radial-gradient(1px 1px at 260px 200px, #006ea0, transparent), radial-gradient(1px 1px at 330px 60px, #d6543299, transparent); background-size: 380px 260px; }
+  .yt { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #000; }
+  .yt iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .yt video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+  section.short { padding: 40px 0 6px; }
+  .sgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+  .sbox { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  .sbox h3 { font: 400 19px "Pixelify Sans", monospace; color: #fff; margin: 0 0 10px; }
+  .keep { margin: 16px 0 0; padding: 12px 16px; border-left: 3px solid var(--grn); background: #0c1a12; border-radius: 6px; color: #cfe9d6; font-size: 15px; }
+  .keep b { color: var(--grn); font-weight: 400; font-family: "Pixelify Sans", monospace; }
+  section.sloop { padding: 44px 0 10px; }
+  .sloop ul { columns: 2 280px; gap: 30px; padding-left: 18px; margin: 0; color: #c4c2d8; }
+  .sloop li { margin: 0 0 8px; break-inside: avoid; }
+  .sloop li::marker { color: var(--org); }
+  .badge { display: inline-block; font: 13px "Pixelify Sans", monospace; color: #1a0d02; background: var(--org); padding: 2px 8px; border-radius: 5px; margin-left: 8px; vertical-align: 3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="name" href="#"><i></i>No Man Sky FM</a>
+    <div class="tr">
+      <span class="credit">Made with <svg class="ph" viewBox="0 0 7 6" aria-label="love" role="img"><path d="M1 0h2v1h1V0h2v1h1v2H6v1H5v1H4v1H3V5H2V4H1V3H0V1h1z"/></svg> by <a href="https://www.youtube.com/@_heric" target="_blank" rel="noopener">hericdk</a> <span class="sep">-</span> website dev: <a href="https://raincake.com.br" target="_blank" rel="noopener">raincake.com.br</a></span>
+      <div class="soc">
+        <span class="sw"><a class="ib" href="https://github.com/hericdk/nomanskyFM" target="_blank" rel="noopener" aria-label="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+          <span class="tip" role="tooltip"><span lang="en"><b>The source</b><br>The whole firmware, open (GPL-3.0). Use the features in your own work: just credit No Man Sky FM in your README or video.</span><span lang="pt"><b>O código</b><br>O firmware inteiro, aberto (GPL-3.0). Use as funções no seu trabalho: só dê o crédito ao No Man Sky FM no README ou no vídeo.</span></span></span>
+        <span class="sw"><a class="ib" href="https://www.instagram.com/hericdk/" target="_blank" rel="noopener" aria-label="Instagram"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 2h9A5.5 5.5 0 0 1 22 7.5v9a5.5 5.5 0 0 1-5.5 5.5h-9A5.5 5.5 0 0 1 2 16.5v-9A5.5 5.5 0 0 1 7.5 2zm0 2A3.5 3.5 0 0 0 4 7.5v9A3.5 3.5 0 0 0 7.5 20h9a3.5 3.5 0 0 0 3.5-3.5v-9A3.5 3.5 0 0 0 16.5 4h-9zM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm5.2-3.2a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"/></svg></a>
+          <span class="tip" role="tooltip"><span lang="en"><b>Real-life side quests</b><br>My personal space to share the progress of my technology studies: learning synths, improvements and tests with No Man Sky FM, winampFM and FM1 Quest, and robotics prototypes with ESP32.</span><span lang="pt"><b>Side quests da vida real</b><br>Meu espaço pessoal para compartilhar o progresso dos meus estudos de tecnologia: aprendendo synth, melhorias e testes com o No Man Sky FM, o winampFM e o FM1 Quest, e protótipos de robótica com ESP32.</span></span></span>
+        <span class="sw"><a class="ib" href="https://www.youtube.com/@_heric" target="_blank" rel="noopener" aria-label="YouTube"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.6 7.2a2.6 2.6 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4A2.6 2.6 0 0 0 2.4 7.2C2 8.8 2 12 2 12s0 3.2.4 4.8a2.6 2.6 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.6 2.6 0 0 0 1.8-1.8c.4-1.6.4-4.8.4-4.8s0-3.2-.4-4.8zM10 15V9l5.2 3L10 15z"/></svg></a>
+          <span class="tip" role="tooltip"><span lang="en"><b>Demos and updates</b><br>Videos of No Man Sky FM, winampFM and FM1 Quest updates in action, development guides so more people can create with their own creativity, and some behind the scenes.</span><span lang="pt"><b>Demonstrações e atualizações</b><br>Vídeos das atualizações do No Man Sky FM, do winampFM e do FM1 Quest em ação, guias de desenvolvimento para mais gente criar com a própria criatividade, e alguns bastidores.</span></span></span>
+      </div>
+      <div class="lang" role="group" aria-label="Language"><button data-set="en" aria-pressed="true">EN</button><button data-set="pt" aria-pressed="false">PT</button></div>
+    </div>
+  </header>
+
+  <section class="hero">
+    <img src="assets/logo.png" alt="No Man Sky FM">
+    <div><h1><span lang="en">No Man Sky FM for your FM-1</span><span lang="pt">No Man Sky FM para o seu FM-1</span></h1>
+    <p><span lang="en">A free firmware for the M-VAVE FM-1: a space adventure you play with two knobs while the other hand makes the music. Land on planets, mine, fight robots, warp between stars.</span><span lang="pt">Um firmware gratuito para o M-VAVE FM-1: uma aventura espacial que você joga com dois knobs enquanto a outra mão faz a música. Pouse em planetas, minere, enfrente robôs, salte entre estrelas.</span></p></div>
+  </section>
+
+  <section class="inst" id="install">
+    <div class="ihead">
+      <button id="go" disabled data-t="install"></button>
+      <span class="ver"><b>No Man Sky FM v0.4</b><br><span lang="en">based on SLOOP 2.7.1</span><span lang="pt">baseado no SLOOP 2.7.1</span></span>
+      <div class="imeta"><p class="small" data-t="intro"></p><p class="small" data-t="warn"></p></div>
+    </div>
+    <div class="prog"><progress id="bar" max="100" value="0"></progress><span id="pct">0%</span></div>
+    <p id="status" aria-live="polite"></p>
+  </section>
+
+  <div class="film">
+    <div class="yt" id="yt" data-id="MJc7dSHSaEI"><video src="media/opening.mp4" poster="media/opening.jpg" muted loop playsinline autoplay></video></div>
+    <p class="note"><span lang="en">All the music in the video was made live on the FM-1, while playing the game.</span><span lang="pt">Toda a música do vídeo foi feita ao vivo no FM-1, enquanto o jogo era jogado.</span></p>
+  </div>
+
+  <section class="simsec" id="simulator">
+    <h2><span lang="en">Play it here</span><span lang="pt">Jogue aqui</span></h2>
+    <p class="sub"><span lang="en">The real firmware in your browser. Click the screen to switch it on, then use the knobs, the buttons or your computer keyboard.</span><span lang="pt">O firmware de verdade no navegador. Clique na tela para ligar e use os knobs, os botões ou o teclado do computador.</span></p>
+    <div class="simwrap"><iframe id="simframe" title="No Man Sky FM simulator" allow="autoplay; midi" loading="lazy"></iframe></div>
+  </section>
+
+  <section class="short" id="shortcuts">
+    <h2><span lang="en">The No Man Sky FM shortcuts</span><span lang="pt">Os atalhos do No Man Sky FM</span></h2>
+    <p class="sub"><span lang="en">On HOME the FM-1 is the game. These are the controls that exist only here.</span><span lang="pt">Na HOME o FM-1 é o jogo. Estes são os comandos que só existem aqui.</span></p>
+    <div class="sgrid">
+      <div class="sbox"><h3><span lang="en">In the game</span><span lang="pt">No jogo</span></h3><div class="keys">
+          <kbd style="--c:var(--k1)">KNOB 1</kbd><span lang="en">turn the ship · on a planet: walk</span><span lang="pt">vira a nave · no planeta: anda</span>
+          <kbd style="--c:var(--k2)">KNOB 2</kbd><span lang="en">speed · on a planet: walk</span><span lang="pt">velocidade · no planeta: anda</span>
+          <kbd style="--c:var(--k3)">KNOB 3</kbd><span lang="en">zoom: wide, near, close-up, cabin</span><span lang="pt">zoom: longe, perto, close-up, cabine</span>
+          <kbd style="--c:var(--k4)">KNOB 4</kbd><span lang="en">the selected track’s volume</span><span lang="pt">o volume da faixa selecionada</span>
+          <kbd style="--c:var(--k1)">SELECT</kbd><span lang="en">the tempo</span><span lang="pt">o tempo</span>
+        </div></div>
+      <div class="sbox"><h3><span lang="en">Held, twice, together</span><span lang="pt">Segurar, duas vezes, juntos</span></h3><div class="keys">
+          <kbd style="--c:var(--k4)">OCT− held</kbd><span lang="en">boost (1.2 s: pulse jump) · on a planet: run</span><span lang="pt">boost (1,2 s: pulse jump) · no planeta: corre</span>
+          <kbd style="--c:var(--k4)">OCT− held, still</kbd><span lang="en">on a planet: call the ship</span><span lang="pt">no planeta: chama a nave</span>
+          <kbd style="--c:var(--k4)">OCT− 2×</kbd><span lang="en">auto boost (another click: off)</span><span lang="pt">auto boost (outro clique: desliga)</span>
+          <kbd style="--c:var(--k2)">OCT+ held</kbd><span lang="en">land · dock · laser (let go: collect) · take off by the ship</span><span lang="pt">pousa · atraca · laser (soltar: coleta) · decola perto da nave</span>
+          <kbd style="--c:var(--k3)">OCT− + OCT+</kbd><span lang="en">the warp map</span><span lang="pt">o mapa do warp</span>
+          <kbd style="--c:var(--k1)">HOME held</kbd><span lang="en">on a planet: the ship · in space: the menu</span><span lang="pt">no planeta: a nave · no espaço: o menu</span>
+          <kbd style="--c:var(--k1)">HOME 2×</kbd><span lang="en">radar</span><span lang="pt">radar</span>
+        </div></div>
+      <div class="sbox"><h3><span lang="en">New screens and settings</span><span lang="pt">Telas e ajustes novos</span></h3><div class="keys">
+          <kbd style="--c:var(--k1)">menu · KEY LED</kbd><span lang="en">the light a key makes: waves, rain, comet, fireworks</span><span lang="pt">a luz que uma tecla faz: waves, rain, comet, fireworks</span>
+          <kbd style="--c:var(--k2)">GLO · DRUM SOUND</kbd><span lang="en">a drum’s TUNE and DECAY</span><span lang="pt">TUNE e DECAY de cada som da bateria</span>
+          <kbd style="--c:var(--k3)">REC · KNOB 4</kbd><span lang="en">QUANT ON / OFF: record off the grid</span><span lang="pt">QUANT ON / OFF: grava fora da grade</span>
+        </div></div>
+    </div>
+    <p class="keep"><b><span lang="en">A quick press keeps the usual function.</span><span lang="pt">Um toque rápido mantém a função normal.</span></b> <span lang="en">Only holding, double tapping or pressing together does something new: tapped once, OCT− and OCT+ still change the octave, HOME goes home, PLAY plays, REC records, and every other button does what it always did on SLOOP.</span><span lang="pt">Só segurar, tocar duas vezes ou apertar junto faz algo novo: com um toque, OCT− e OCT+ continuam trocando a oitava, HOME vai para a home, PLAY toca, REC grava, e todo outro botão faz o que sempre fez no SLOOP.</span></p>
+  </section>
+
+  <section class="feats" id="features">
+    <h2><span lang="en">What it does</span><span lang="pt">O que ele faz</span></h2>
+    <p class="sub"><span lang="en">Each clip is the real screen. Next to it: what it is, and the buttons that do it.</span><span lang="pt">Cada clipe é a tela de verdade. Ao lado: o que é e os botões que fazem.</span></p>
+
+    <div class="feat">
+      <video src="media/opening.mp4" poster="media/opening.jpg" muted loop playsinline autoplay preload="none"></video>
+      <div>
+        <h3><span lang="en">A space adventure</span><span lang="pt">Uma aventura espacial</span> <small>NEW</small></h3>
+        <p><span lang="en">Switch the FM-1 on: your ship flies in over the stars, with its own synthwave theme and a long reverb. Then it arrives in space and the game begins.</span><span lang="pt">Ligue o FM-1: sua nave entra voando pelas estrelas, com um tema synthwave próprio e reverb longo. Depois ela chega no espaço e o jogo começa.</span></p>
+        <div class="keys">
+          <kbd style="--c:var(--k1)">power on</kbd><span lang="en">the opening, then the game</span><span lang="pt">a abertura, depois o jogo</span>
+          <kbd style="--c:var(--k2)">any button</kbd><span lang="en">skips it</span><span lang="pt">pula</span>
+        </div>
+      </div>
+    </div>
+    <div class="feat">
+      <video src="media/space.mp4" poster="media/space.jpg" muted loop playsinline autoplay preload="none"></video>
+      <div>
+        <h3><span lang="en">Fly between planets</span><span lang="pt">Voe entre planetas</span></h3>
+        <p><span lang="en">Two knobs fly the ship. The nearest planets wait at the edge of the screen with their distance in light-years; every one is different: colours, seas, hills, rings.</span><span lang="pt">Dois knobs pilotam a nave. Os planetas mais perto esperam na borda da tela com a distância em anos-luz; cada um é diferente: cores, mares, morros, anéis.</span></p>
+        <div class="keys">
+          <kbd style="--c:var(--k1)">KNOB 1</kbd><span lang="en">turn</span><span lang="pt">vira</span>
+          <kbd style="--c:var(--k2)">KNOB 2</kbd><span lang="en">speed</span><span lang="pt">velocidade</span>
+          <kbd style="--c:var(--k3)">OCT− held</kbd><span lang="en">boost, then the pulse jump</span><span lang="pt">boost, depois o pulse jump</span>
+          <kbd style="--c:var(--k4)">OCT− 2×</kbd><span lang="en">auto boost</span><span lang="pt">auto boost</span>
+        </div>
+      </div>
+    </div>
+    <div class="feat">
+      <video src="media/music.mp4" poster="media/music.jpg" muted loop playsinline autoplay preload="none"></video>
+      <div>
+        <h3><span lang="en">Make the soundtrack</span><span lang="pt">Faça a trilha sonora</span></h3>
+        <p><span lang="en">Everything of SLOOP is there: record loops, steps, drums, effects. Every screen shows the game behind it, so the journey goes on while you play.</span><span lang="pt">Todo o SLOOP está lá: grave loops, passos, bateria, efeitos. Toda tela mostra o jogo por trás, então a viagem continua enquanto você toca.</span></p>
+        <div class="keys">
+          <kbd style="--c:var(--k1)">REC</kbd><span lang="en">record a loop</span><span lang="pt">grava um loop</span>
+          <kbd style="--c:var(--k2)">SEQ held + keys</kbd><span lang="en">steps</span><span lang="pt">passos</span>
+          <kbd style="--c:var(--k3)">FX held + key</kbd><span lang="en">a performance effect</span><span lang="pt">um efeito de performance</span>
+        </div>
+      </div>
+    </div>
+    <div class="feat">
+      <video src="media/landing.mp4" poster="media/landing.jpg" muted loop playsinline autoplay preload="none"></video>
+      <div>
+        <h3><span lang="en">Land anywhere</span><span lang="pt">Pouse em qualquer lugar</span></h3>
+        <p><span lang="en">Fly close to a planet until the dotted ring blinks, then hold B: the planet grows and you are on its ground.</span><span lang="pt">Chegue perto de um planeta até o anel pontilhado piscar e segure B: o planeta cresce e você está no chão.</span></p>
+        <div class="keys">
+          <kbd style="--c:var(--k1)">OCT+ held</kbd><span lang="en">land</span><span lang="pt">pousa</span>
+        </div>
+      </div>
+    </div>
+    <div class="feat">
+      <video src="media/fight.mp4" poster="media/fight.jpg" muted loop playsinline autoplay preload="none"></video>
+      <div>
+        <h3><span lang="en">Robots, laser, loot</span><span lang="pt">Robôs, laser, recursos</span></h3>
+        <p><span lang="en">Walk on the planet, mine its resources with the laser, and fight the sentinels: they chase you, three hits and they blow up. Some planets are hostile and shoot back.</span><span lang="pt">Ande no planeta, minere os recursos com o laser e enfrente as sentinelas: elas te perseguem, três tiros e explodem. Alguns planetas são hostis e atiram de volta.</span></p>
+        <div class="keys">
+          <kbd style="--c:var(--k1)">KNOB 1 · 2</kbd><span lang="en">walk</span><span lang="pt">anda</span>
+          <kbd style="--c:var(--k2)">OCT− held</kbd><span lang="en">run</span><span lang="pt">corre</span>
+          <kbd style="--c:var(--k3)">OCT+ held</kbd><span lang="en">the laser (let go: collect)</span><span lang="pt">o laser (soltar: coleta)</span>
+        </div>
+      </div>
+    </div>
+    <div class="feat">
+      <video src="media/takeoff.mp4" poster="media/takeoff.jpg" muted loop playsinline autoplay preload="none"></video>
+      <div>
+        <h3><span lang="en">Call your ship, take off</span><span lang="pt">Chame a nave, decole</span></h3>
+        <p><span lang="en">The ship comes down beside you. By it, hold B: a pixel-art film carries you through the clouds back to space.</span><span lang="pt">A nave desce do seu lado. Perto dela, segure B: um filme em pixel art te leva pelas nuvens de volta ao espaço.</span></p>
+        <div class="keys">
+          <kbd style="--c:var(--k1)">HOME held</kbd><span lang="en">call the ship</span><span lang="pt">chama a nave</span>
+          <kbd style="--c:var(--k2)">OCT− held, still</kbd><span lang="en">call the ship</span><span lang="pt">chama a nave</span>
+          <kbd style="--c:var(--k3)">OCT+ held</kbd><span lang="en">take off by the ship</span><span lang="pt">decola perto da nave</span>
+        </div>
+      </div>
+    </div>
+    <div class="feat">
+      <video src="media/pursuit.mp4" poster="media/pursuit.jpg" muted loop playsinline autoplay preload="none"></video>
+      <div>
+        <h3><span lang="en">They follow you</span><span lang="pt">Eles te seguem</span></h3>
+        <p><span lang="en">The robots you fought come after you into space as red ships, shooting. Boost hard enough and you lose them. The radar opens a blue ring of light.</span><span lang="pt">Os robôs que você enfrentou vêm atrás de você no espaço, como naves vermelhas, atirando. Acelere forte e você despista. O radar abre um anel azul de luz.</span></p>
+        <div class="keys">
+          <kbd style="--c:var(--k1)">HOME 2×</kbd><span lang="en">radar</span><span lang="pt">radar</span>
+          <kbd style="--c:var(--k2)">OCT− held</kbd><span lang="en">boost away</span><span lang="pt">foge no boost</span>
+        </div>
+      </div>
+    </div>
+    <div class="feat">
+      <video src="media/cabin.mp4" poster="media/cabin.jpg" muted loop playsinline autoplay preload="none"></video>
+      <div>
+        <h3><span lang="en">Zoom in, then step inside</span><span lang="pt">Zoom, e depois para dentro</span></h3>
+        <p><span lang="en">Zoom in to your ship among long trails of light, and once more to sit in its cabin: the planet ahead grows in the window.</span><span lang="pt">Dê zoom na sua nave entre rastros longos de luz e mais uma vez para sentar na cabine: o planeta à frente cresce na janela.</span></p>
+        <div class="keys">
+          <kbd style="--c:var(--k3)">KNOB 3</kbd><span lang="en">wide · near · close-up · cabin</span><span lang="pt">longe · perto · close-up · cabine</span>
+        </div>
+      </div>
+    </div>
+    <div class="feat">
+      <video src="media/warp.mp4" poster="media/warp.jpg" muted loop playsinline autoplay preload="none"></video>
+      <div>
+        <h3><span lang="en">Warp to other stars</span><span lang="pt">Salte para outras estrelas</span></h3>
+        <p><span lang="en">Open the galactic map, pick a star system and jump: a tunnel of light, then a new system with new planets.</span><span lang="pt">Abra o mapa galáctico, escolha um sistema e salte: um túnel de luz, depois um sistema novo com planetas novos.</span></p>
+        <div class="keys">
+          <kbd style="--c:var(--k1)">OCT− + OCT+</kbd><span lang="en">the map</span><span lang="pt">o mapa</span>
+          <kbd style="--c:var(--k2)">KNOB 1 · 2</kbd><span lang="en">choose</span><span lang="pt">escolhe</span>
+          <kbd style="--c:var(--k3)">OCT+</kbd><span lang="en">jump</span><span lang="pt">salta</span>
+          <kbd style="--c:var(--k4)">HOME</kbd><span lang="en">close</span><span lang="pt">fecha</span>
+        </div>
+      </div>
+    </div>
+    <div class="feat">
+      <video src="media/fx.mp4" poster="media/fx.jpg" muted loop playsinline autoplay preload="none"></video>
+      <div>
+        <h3><span lang="en">Every screen over the game</span><span lang="pt">Toda tela sobre o jogo</span> <small>NEW</small></h3>
+        <p><span lang="en">Pages, layers, REC, the menu: none has a black background any more. The game goes on behind them through a mesh of pixels.</span><span lang="pt">Páginas, camadas, REC, o menu: nenhum tem fundo preto. O jogo continua por trás deles, numa malha de pixels.</span></p>
+        <div class="keys">
+          <kbd style="--c:var(--k1)">any page</kbd><span lang="en">the game behind</span><span lang="pt">o jogo por trás</span>
+        </div>
+      </div>
+    </div>
+    <div class="feat">
+      <video src="media/cruise.mp4" poster="media/cruise.jpg" muted loop playsinline autoplay preload="none"></video>
+      <div>
+        <h3><span lang="en">Calm flight</span><span lang="pt">Voo tranquilo</span></h3>
+        <p><span lang="en">Set the auto boost, start a soft loop, and just fly. The music is yours.</span><span lang="pt">Ligue o auto boost, comece um loop suave e só voe. A música é sua.</span></p>
+        <div class="keys">
+          <kbd style="--c:var(--k1)">OCT− 2×</kbd><span lang="en">auto boost on / off</span><span lang="pt">auto boost liga / desliga</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sloop" id="sloop">
+    <h2><span lang="en">Up to date with SLOOP 2.7.1</span><span lang="pt">Atualizado com o SLOOP 2.7.1</span><span class="badge">SLOOP 2.7.1</span></h2>
+    <p class="sub"><span lang="en">No Man Sky FM 0.4 merges SLOOP 2.6 → 2.7.1, in this firmware’s look:</span><span lang="pt">O No Man Sky FM 0.4 traz o SLOOP 2.6 → 2.7.1, no visual deste firmware:</span></p>
+    <ul>
+      <li><span lang="en">the sound on both cores of the FM-1</span><span lang="pt">o som nos dois núcleos do FM-1</span></li>
+      <li><span lang="en">15 arp modes, KBD HOLD</span><span lang="pt">15 modos de arp, KBD HOLD</span></li>
+      <li><span lang="en">MIDI 3: FX channel, drum map, remote, clock out</span><span lang="pt">MIDI 3: canal de FX, mapa da bateria, remote, clock out</span></li>
+      <li><span lang="en">SAVE SECTION A–D, favourite sounds</span><span lang="pt">SAVE SECTION A–D, sons favoritos</span></li>
+      <li><span lang="en">drum TUNE and DECAY (a DRUM SOUND page)</span><span lang="pt">TUNE e DECAY da bateria (página DRUM SOUND)</span></li>
+      <li><span lang="en">REC QUANT off, looping user samples</span><span lang="pt">REC QUANT off, samples do usuário em loop</span></li>
+      <li><span lang="en">knob acceleration, USB audio rate</span><span lang="pt">aceleração dos knobs, taxa do áudio USB</span></li>
+    </ul>
+  </section>
+
+  <section class="install">
+    <h2><span lang="en">Installing: details</span><span lang="pt">Instalação: detalhes</span></h2>
+    <p class="small" data-t="beta"></p>
+    <p class="small" data-t="direct"></p>
+    <p class="small"><span data-t="brick"></span> <a href="https://github.com/kurogedelic/FM-1-transporter" target="_blank" rel="noopener">FM-1-transporter</a>.
+      <span lang="en">Hold OCT− alone while switching the FM-1 on for the USB rescue.</span><span lang="pt">Segure só o OCT− ao ligar o FM-1 para o resgate por USB.</span></p>
+    <details>
+      <summary data-t="stockTitle"></summary>
+      <p class="small" data-t="stockHelp"></p>
+      <p class="small"><a href="https://www.m-vave.com/download" target="_blank" rel="noopener">www.m-vave.com/download</a></p>
+      <p class="small" data-t="stockBackup"></p>
+      <p class="small"><label><input id="stock-saved" type="checkbox"> <span data-t="stockSaved"></span></label></p>
+      <p class="small"><label><span data-t="stockFile"></span><br><input id="stock-file" type="file" accept=".fwsc"></label></p>
+      <p><button id="stock-go" class="btn" disabled data-t="stockGo"></button></p>
+      <p class="small" data-t="back"></p>
+    </details>
+    <details>
+      <summary><span lang="en">Install log</span><span lang="pt">Registro da instalação</span></summary>
+      <pre id="log"></pre>
+    </details>
+  </section>
+
+  <footer>
+    <p><span lang="en">No Man Sky FM is based on SLOOP 2.7.1 by isod89, which is based on Felucca by Leo Kuroshita (Hügelton Instruments). GPL-3.0.</span><span lang="pt">O No Man Sky FM é baseado no SLOOP 2.7.1 de isod89, que é baseado no Felucca de Leo Kuroshita (Hügelton Instruments). GPL-3.0.</span></p>
+    <p><span lang="en">A fan-made demake inspired by No Man’s Sky. Not affiliated with Hello Games or M-VAVE. M-VAVE and FM-1 are trademarks of their respective owners.</span><span lang="pt">Um demake feito por fã, inspirado em No Man’s Sky. Sem ligação com a Hello Games ou a M-VAVE. M-VAVE e FM-1 são marcas de seus donos.</span></p>
+    <p><a href="#cookies" id="ck-open"><span lang="en">Cookies and statistics (Google Analytics)</span><span lang="pt">Cookies e estatísticas (Google Analytics)</span></a></p>
+  </footer>
+  <div id="ckbar" role="dialog" aria-label="Cookies" hidden>
+    <p><span lang="en">This site uses cookies only for Google Analytics (counting visits and clicks). Nothing is used for ads.</span><span lang="pt">Este site usa cookies apenas para o Google Analytics (contar visitas e cliques). Nada é usado para anúncios.</span></p>
+    <div class="ckb"><button type="button" id="ck-yes"><span lang="en">Accept</span><span lang="pt">Aceitar</span></button><button type="button" id="ck-no"><span lang="en">Decline</span><span lang="pt">Recusar</span></button></div>
+  </div>
+</div>
+<script>
+  (function () {
+    const set = (l) => { document.documentElement.dataset.l = l; document.documentElement.lang = l === 'pt' ? 'pt-BR' : 'en';
+      document.querySelectorAll('.lang button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.set === l)));
+      try { localStorage.setItem('nms-lang', l); } catch (e) {} dispatchEvent(new Event('nms-lang')); };
+    let l = 'en';
+    try { l = localStorage.getItem('nms-lang') || ((navigator.language || '').toLowerCase().startsWith('pt') ? 'pt' : 'en'); } catch (e) {}
+    set(l);
+    document.querySelectorAll('.lang button').forEach((b) => b.addEventListener('click', () => set(b.dataset.set)));
+    // the clips play only while on screen
+    const io = new IntersectionObserver((es) => es.forEach((e) => { const v = e.target; if (e.isIntersecting) { if (v.preload === 'none') v.preload = 'auto'; v.play().catch(() => {}); } else v.pause(); }), { rootMargin: '200px' });
+    document.querySelectorAll('.feat video').forEach((v) => io.observe(v));
+    const sf = document.getElementById('simframe');
+    const simIO = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting) && !sf.src) { sf.src = 'sim/?embed&lang=' + document.documentElement.dataset.l; simIO.disconnect(); } }, { rootMargin: '400px' });
+    simIO.observe(sf);
+    sf.addEventListener('load', () => {                     // the frame takes the height of what is in it: no empty band under the model
+      const d = sf.contentDocument; if (!d) return;
+      const fit = () => { const h = d.querySelector('main') ? d.querySelector('main').getBoundingClientRect().bottom : d.body.scrollHeight; if (h > 50) sf.style.height = Math.ceil(h) + 'px'; };
+      if (window.ResizeObserver) new ResizeObserver(fit).observe(d.body); fit(); setTimeout(fit, 800);
+    });
+    const yt = document.getElementById('yt');             // the launch video: YouTube once it is out (data-id), a clip until then
+    if (yt.dataset.id) yt.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' + yt.dataset.id + '" title="No Man Sky FM" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>';
+    const bar = document.getElementById('bar'), pct = document.getElementById('pct');
+    setInterval(() => { pct.textContent = Math.round(bar.value) + '%'; }, 200);
+  })();
+</script>
+<script>
+/* analytics: Google Analytics only, cookies only after "accept"; the installer, the simulator and outside links are counted */
+(function () {
+  const $ = (i) => document.getElementById(i), CK = "nms.cookies";
+  const ga = (name, p) => { try { gtag("event", name, p || {}); } catch (e) {} };
+  const ckSet = (v) => { try { localStorage.setItem(CK, v); } catch (e) {} gtag("consent", "update", { analytics_storage: v === "yes" ? "granted" : "denied" }); };
+  const bar = $("ckbar");
+  $("ck-yes").addEventListener("click", () => { ckSet("yes"); bar.hidden = true; });
+  $("ck-no").addEventListener("click", () => { ckSet("no"); bar.hidden = true; });
+  $("ck-open").addEventListener("click", (e) => { e.preventDefault(); bar.hidden = false; $("ck-yes").focus(); });
+  let seen = null; try { seen = localStorage.getItem(CK); } catch (e) {}
+  if (seen === null) bar.hidden = false;
+  const go = $("go"); if (go) go.addEventListener("click", () => ga("install_click"));
+  const sim = document.getElementById("simulator");
+  if (sim && window.IntersectionObserver) { const o = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { ga("sim_view"); o.disconnect(); } }); o.observe(sim); }
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest && e.target.closest("a[href]"); if (!a) return;
+    let u; try { u = new URL(a.href, location.href); } catch (x) { return; }
+    if (/^https?:$/.test(u.protocol) && u.host !== location.host) ga("external_link", { link_domain: u.hostname.replace(/^www\./, ""), link_url: u.href.slice(0, 100) });
+  }, true);
+})();
+</script>
+<!--INSTALLER-->
+<script type="module">
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
+//
+// FM-1 .fwsc packages in the browser: the package identity and the image the
+// device reads during an update.
+
+const BLOCKS = 20, BLK = 0x30, KEEP = 0x2F;
+
+// the package identity ("FM-1_904"): one marker byte after each of the first 20 blocks
+function productOf(fwsc) {
+  if (fwsc.length < BLOCKS * BLK) throw new Error("not an FM-1 package (too short)");
+  let s = "";
+  for (let i = 0; i < BLOCKS; i++) {
+    const m = fwsc[i * BLK + KEEP];
+    if (m !== 0x7D) s += String.fromCharCode((m - i - 1) & 0xFF);
+  }
+  return s;
+}
+
+// the image the device addresses during an update: the .fwsc without the 20 marker bytes
+function logicalImage(fwsc) {
+  const out = new Uint8Array(fwsc.length - BLOCKS);
+  for (let i = 0; i < BLOCKS; i++) out.set(fwsc.subarray(i * BLK, i * BLK + KEEP), i * KEEP);
+  out.set(fwsc.subarray(BLOCKS * BLK), BLOCKS * KEEP);
+  return out;
+}
+
+// The official FM-1 V15 (M-VAVE Downloads -> PC Firmware -> FM-1 V15, FM-1.fwsc), for the return to the
+// official firmware: only that exact file is accepted (its SHA-256 pins every byte: the loader, the app, the
+// layout; the name of the file proves nothing). The digest is the one Felucca 1.0 pins.
+const STOCK_V15_SHA256 = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a";
+const STOCK_V15_SIZE = 699956;
+const STOCK_V15_PRODUCT = "FM-1_015";
+
+async function sha256hex(bytes) {
+  const d = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(d)].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+async function validateStockPackage(bytes) {
+  if (bytes.length !== STOCK_V15_SIZE || await sha256hex(bytes) !== STOCK_V15_SHA256 || productOf(bytes) !== STOCK_V15_PRODUCT)
+    throw new Error("select the unmodified official FM-1 V15 file (FM-1.fwsc)");
+  return { product: STOCK_V15_PRODUCT, image: logicalImage(bytes) };
+}
+
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
+//
+// The FM-1 USB-MIDI update protocol (M-UPGRADE compatible) over WebMIDI.
+// Step 1: the running firmware reads parts of the package and stages the update
+// loader. Step 2: the loader reads the whole image and writes it. In both steps
+// the device sends cmd 0x30 read requests on the logical image and we answer.
+
+const HS_QUERY = [0xF0, 0x00, 0x32, 0x45, 0x00, 0x00, 0x00, 0x40, 0x7F, 0xF7];
+const UPGRADE = [0xF0, 0x22, 0x24, 0x35, 0x7F, 0xF7];
+const MAXDATA = 512;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const IS_OTA = (id) => /^ota-/i.test(id.model);
+// the update loader of SLOOP / Felucca packages ("ota-FM-1_9XX"). A device left in the update mode of another
+// firmware (the stock updater's loader) is never written: its loader may lay the image out differently.
+const OUR_LOADER = (id) => /^ota-FM-1_9\d\d$/i.test(id.text);
+
+// errors carry a code the pages translate: notfound, model, stopped, noloader, lost, noreturn,
+// mismatch (detail: the identity the device reports), badreq, foreign (detail: the loader's identity)
+function fail(code, msg, detail = "") { const e = new Error(msg); e.code = code; e.detail = detail; return e; }
+
+function pack7(data) {
+  const out = []; let acc = 0, nb = 0;
+  for (const b of data) {
+    acc |= b << nb; nb += 8;
+    while (nb >= 7) { out.push(acc & 0x7F); acc >>>= 7; nb -= 7; }
+  }
+  if (nb) out.push(acc & 0x7F);
+  return out;
+}
+
+function unpack7(s) {
+  const out = []; let acc = 0, nb = 0;
+  for (const b of s) {
+    acc |= (b & 0x7F) << nb; nb += 7;
+    while (nb >= 8) { out.push(acc & 0xFF); acc >>>= 8; nb -= 8; }
+  }
+  return out;
+}
+
+function response(addr, data, fl = 0) {
+  const len = data.length;
+  const body = [0x00, 0x59, 0x30, (len + 8) & 0xFF, ((len + 8) >> 8) & 0xFF, 0, fl,
+    addr & 0xFF, (addr >>> 8) & 0xFF, (addr >>> 16) & 0xFF, (addr >>> 24) & 0xFF,
+    len & 0xFF, (len >> 8) & 0xFF, 0, ...data];
+  let s = 0;
+  for (let i = 6; i < body.length; i++) s += body[i];
+  body.push(~s & 0xFF);
+  return [0xF0, ...pack7(body), 0xF7];
+}
+
+function parseRequest(pkt) {
+  if (pkt[0] !== 0xF0 || pkt[pkt.length - 1] !== 0xF7) return null;
+  const u = unpack7(pkt.slice(1, -1));
+  if (u.length !== 15 || u[0] !== 0 || u[1] !== 0x59 || u[2] !== 0x30) return null;
+  let s = 0;
+  for (let i = 6; i < 14; i++) s += u[i];
+  if ((~s & 0xFF) !== u[14]) return null;
+  return { fl: u[6], addr: (u[7] | (u[8] << 8) | (u[9] << 16) | (u[10] << 24)) >>> 0, len: u[11] | (u[12] << 8) | (u[13] << 16) };
+}
+
+function parseIdentity(pkt) {
+  const d = unpack7(pkt.slice(1, -1));
+  if (d.length !== 34 || d[0] !== 0 || d[1] !== 0x59 || d[2] !== 0x11) return null;
+  const txt = String.fromCharCode(...d.slice(6, 33)).replace(/\0+$/, "");
+  const m = /^([^_]+)_(\d+)$/.exec(txt);
+  return m ? { text: txt, model: m[1], version: parseInt(m[2], 10) } : null;
+}
+
+// one MIDI in/out pair with a SysEx queue
+class Link {
+  constructor(input, output) {
+    this.input = input; this.output = output; this.q = []; this.waiter = null;
+    input.onmidimessage = (ev) => {
+      if (ev.data[0] !== 0xF0) return;
+      this.q.push(Array.from(ev.data));
+      if (this.waiter) { const w = this.waiter; this.waiter = null; w(); }
+    };
+  }
+  get lost() { return this.input.state === "disconnected" || this.output.state === "disconnected"; }
+  // false when the port is gone (unplugged): WebMIDI throws on a disconnected output
+  send(bytes) {
+    try { this.output.send(bytes); return true; } catch (_) { return false; }
+  }
+  drain() { this.q.length = 0; }
+  async read(ms) {
+    if (!this.q.length) {
+      let tm;
+      await Promise.race([new Promise((r) => { this.waiter = r; }), new Promise((r) => { tm = setTimeout(r, ms); })]);
+      clearTimeout(tm);
+      this.waiter = null;
+    }
+    return this.q.shift() || null;
+  }
+  close() { this.input.onmidimessage = null; }
+}
+
+async function handshake(link, tries = 3) {
+  link.drain();
+  for (let t = 0; t < tries; t++) {
+    if (!link.send(HS_QUERY)) return null;
+    const end = Date.now() + 1000;
+    while (Date.now() < end) {
+      const p = await link.read(end - Date.now());
+      if (!p) break;
+      const id = parseIdentity(p);
+      if (id) return id;
+    }
+  }
+  return null;
+}
+
+class Updater {
+  constructor(access, log) {
+    this.access = access;
+    this.log = log || (() => {});
+  }
+
+  // every in/out pair with the same port name that answers the handshake
+  async find(filter) {
+    const outs = [...this.access.outputs.values()];
+    for (const input of this.access.inputs.values()) {
+      if (input.state === "disconnected") continue;
+      if (!/fm-1|felucca|ota|composite|sinco|usb-midi/i.test(input.name || "")) continue;   // never probe other gear
+      const output = outs.find((o) => o.name === input.name) || (outs.length === 1 ? outs[0] : null);
+      if (!output) continue;
+      try { await input.open(); await output.open(); } catch (_) { continue; }
+      const link = new Link(input, output);
+      const id = await handshake(link, 2);
+      if (id && (!filter || filter(id))) return { link, id, name: input.name };
+      link.close();
+    }
+    return null;
+  }
+
+  async waitFor(filter, ms) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      const dev = await this.find(filter);
+      if (dev) return dev;
+      await sleep(1000);
+    }
+    return null;
+  }
+
+  // serve read requests until the device asks for one of the finish addresses; stops early
+  // when the port disappears (lost: true) instead of waiting out idleMs
+  async serve(link, image, finishAddr, idleMs, onProgress) {
+    let served = 0, last = Date.now();
+    for (;;) {
+      const pkt = await link.read(1000);
+      if (!pkt) {
+        if (link.lost) return { served, finished: false, lost: true };
+        if (Date.now() - last > idleMs) return { served, finished: false };
+        continue;
+      }
+      const r = parseRequest(pkt);
+      if (!r) continue;
+      last = Date.now();
+      if (r.addr === 0xE0000000 || r.addr === 0xF0000000) {
+        link.send(response(r.addr, [...new TextEncoder().encode("success"), 0]));
+        if (r.addr === finishAddr) return { served, finished: true };
+        continue;
+      }
+      if (r.len > MAXDATA || r.addr + r.len > image.length) throw fail("badreq", `bad request ${r.addr.toString(16)}+${r.len}`);
+      await sleep(10);
+      if (!link.send(response(r.addr, Array.from(image.subarray(r.addr, r.addr + r.len)), r.fl))) {
+        return { served, finished: false, lost: true };
+      }
+      served++;
+      if (onProgress) onProgress(served, r.addr);
+    }
+  }
+
+  // full install: running firmware -> loader -> new firmware
+  async install(image, product, onStep, opts = {}) {
+    const step = onStep || (() => {});
+    const dev = await this.find((id) => !IS_OTA(id));
+    if (!dev) throw fail("notfound", "FM-1 not found (USB cable, and no other app using it?)");
+    const [model] = product.split("_");
+    if (dev.id.model !== model) { dev.link.close(); throw fail("model", `the device is ${dev.id.text}, the package is for ${product}`); }
+    // Melodee (a Felucca fork with its own data layout and release identities FM-1_9 + 3 to 5 digits): flashing over it was not tested.
+    // Say so once, with the safe way (its own "Return to official V15", which saves a backup first); pressing Install again goes ahead.
+    if (/^FM-1_9\d{3,5}$/.test(dev.id.text) && !opts.melodeeAck) { dev.link.close(); throw fail("melodee", "this FM-1 runs Melodee", " (" + dev.id.text + ")"); }
+    step("start", dev.id.text);
+    dev.link.send(UPGRADE);
+    await sleep(2000);
+    const s1 = await this.serve(dev.link, image, 0xE0000000, 8000, (n) => step("verify", n));
+    dev.link.close();
+    if (!s1.finished) throw fail(s1.lost ? "lost" : "stopped", `the device ${s1.lost ? "was disconnected" : "stopped"} after ${s1.served} requests: nothing was written`);
+    step("loader");
+    await sleep(3000);
+    const ota = await this.waitFor(IS_OTA, 30000);
+    if (!ota) throw fail("noloader", "the update loader did not appear. Replug the USB cable and press Install again: the device stays in update mode until it is finished.");
+    const s2 = await this.write(ota, image, step);
+    if (!s2.finished) throw fail(s2.lost ? "lost" : "stopped", `the loader ${s2.lost ? "was disconnected" : "stopped"} after ${s2.served} requests. Replug and press Install again to resume.`);
+    step("reboot");
+    await sleep(3000);
+    const back = await this.waitFor((id) => !IS_OTA(id), 40000);
+    if (!back) throw fail("noreturn", "the device did not come back: power-cycle it");
+    back.link.close();
+    if (back.id.text !== product) throw fail("mismatch", `installed, but the device reports ${back.id.text}`, back.id.text);
+    step("done", back.id.text);
+    return back.id.text;
+  }
+
+  // step 2 with the loader found by find()/waitFor()
+  async write(ota, image, step) {
+    ota.link.send(UPGRADE);
+    await sleep(2000);
+    const s2 = await this.serve(ota.link, image, 0xF0000000, 180000, (n) => step("write", n));
+    ota.link.close();
+    return s2;
+  }
+
+  // resume: the device is already in update mode (loader) -> true when the write finished. Only SLOOP's
+  // own loader is resumed, except for the return to the official firmware (opts.product: the official
+  // package, its identity checked once the FM-1 is back, after Felucca 1.0): that one is the official
+  // loader's own image, as M-UPGRADE would write it
+  async resume(image, onStep, opts = {}) {
+    const ota = await this.find(IS_OTA);
+    if (!ota) return false;
+    if (!OUR_LOADER(ota.id) && !opts.product) {
+      ota.link.close();
+      throw fail("foreign", `the FM-1 is in the update mode of another firmware (${ota.id.text}): finish that update with its own updater`, ota.id.text);
+    }
+    const step = onStep || (() => {});
+    if (!(await this.write(ota, image, step)).finished) return false;
+    if (opts.product) {
+      step("reboot");
+      await sleep(3000);
+      const back = await this.waitFor((id) => !IS_OTA(id), 40000);
+      if (!back) throw fail("noreturn", "the FM-1 did not come back after the write: power-cycle it");
+      back.link.close();
+      if (back.id.text !== opts.product) throw fail("mismatch", `written, but the FM-1 reports ${back.id.text}`, back.id.text);
+      step("done", back.id.text);
+    }
+    return true;
+  }
+}
+
+const $ = (id) => document.getElementById(id);
+const TEXT = {
+  en: {
+    ready: "Ready to install No Man Sky FM ",
+    intro: "Connect the FM-1 by USB, then press Install. Chrome or Edge only (Web MIDI).",
+    warn: "Do not unplug the USB cable while writing.",
+    install: "Install No Man Sky FM",
+    editor: "Open the editor (back up, edit sounds and sequences from the computer)",
+    direct: "Connect the USB cable directly to the computer. No probe or Transporter is needed.",
+    brick: "If an install fails and the FM-1 no longer starts, recovering it needs a Transporter:",
+    beta: "No Man Sky FM is an experimental custom firmware and may be unstable. It has not been tried on every unit. The authors accept no responsibility if your FM-1 is damaged or misbehaves because of it. Use it at your own risk, and save a backup first.",
+    back: "To go back to the official firmware you need M-VAVE's official updater, M-UPGRADE (Downloads → PC Software → M-UPGRADE), and the official firmware (PC Firmware → FM-1 V15).",
+    nomidi: "This browser cannot do it. Open the page in Chrome or Edge.", loadfail: "Could not load: ",
+    start: "Talking to the FM-1…", verify: "Step 1 of 3 · sending No Man Sky FM to the FM-1 and checking it", loader: "Step 2 of 3 · the FM-1 restarts in update mode", write: "Step 3 of 3 · writing No Man Sky FM. Do not unplug the cable",
+    reboot: "Restarting the FM-1…", done: "Done! No Man Sky FM is installed: ", stopped: "Stopped. Replug the USB cable and press Install again.",
+    error: "Error: ",
+    denied: "MIDI (SysEx) access was not allowed. Allow MIDI in the site settings (address bar) and press Install again.",
+    notfound: "FM-1 not found. Check the USB cable (a data cable), close other apps that use MIDI, and press Install again.",
+    model: "The connected device is not an FM-1.",
+    lost: "The USB connection was lost. Replug it and press Install again.",
+    noloader: "The FM-1 in update mode was not found. Replug the USB cable and press Install again (it stays in update mode until it is finished).",
+    noreturn: "The FM-1 did not come back. Power-cycle it.",
+    mismatch: "Written, but the FM-1 reports another version: ",
+    foreign: "The FM-1 is in the update mode of another firmware. Finish that update with its own updater (M-UPGRADE), then press Install again: ",
+    badpkg: "The file to install is damaged. Reload the page.",
+    leave: "Writing. Do not close the page.",
+    license: "GPL-3.0, no warranty. Source:",
+    stockTitle: "Return to the official firmware (V15)",
+    stockHelp: "Download the official FM-1 V15 from M-VAVE and select the FM-1.fwsc inside it, unmodified. The file is checked in this browser; it is not sent anywhere.",
+    stockBackup: "The official firmware cannot open SLOOP / No Man Sky FM music, projects or samples. Write down or record what you want to keep first.",
+    stockEditor: "Open the editor to back up", stockSaved: "I saved a backup on this computer",
+    stockFile: "The official FM-1.fwsc", stockGo: "Install the official V15",
+    stockValid: "Official V15 verified", stockBad: "Not the official V15: ",
+    stockConfirm: "Install the official V15 on the FM-1? The official firmware cannot open No Man Sky FM music. Did you save a backup?",
+    stockFinish: "The FM-1 is in the update mode of SLOOP / No Man Sky FM. Press Install to finish that update first, then return to the official V15.",
+    back: "M-VAVE's own updater, M-UPGRADE (Downloads → PC Software), works too. If it does not find the FM-1, close every other app and browser tab that uses MIDI.",
+  },
+  pt: {
+    ready: "Pronto para instalar o No Man Sky FM ",
+    intro: "Ligue o FM-1 no USB e aperte Instalar. Só no Chrome ou no Edge (Web MIDI).", warn: "Não desconecte o cabo USB enquanto ele grava.",
+    install: "Instalar o No Man Sky FM", editor: "Abrir o editor (backup, sons e sequências pelo computador)",
+    direct: "Ligue o cabo USB direto no computador. Não precisa de probe nem de Transporter.",
+    brick: "Se uma instalação falhar e o FM-1 não ligar mais, para recuperar é preciso um Transporter:",
+    beta: "O No Man Sky FM é um firmware experimental e pode ser instável. Não foi testado em todas as unidades. Os autores não se responsabilizam por danos ou mau funcionamento do seu FM-1. Use por sua conta e faça backup antes.",
+    nomidi: "Este navegador não consegue. Abra a página no Chrome ou no Edge.", loadfail: "Não carregou: ",
+    start: "Conversando com o FM-1…", verify: "Passo 1 de 3 · enviando o No Man Sky FM ao FM-1 e conferindo", loader: "Passo 2 de 3 · o FM-1 reinicia em modo de atualização",
+    write: "Passo 3 de 3 · gravando o No Man Sky FM. Não desconecte o cabo", reboot: "Reiniciando o FM-1…", done: "Pronto! O No Man Sky FM está instalado: ",
+    stopped: "Parou. Reconecte o cabo USB e aperte Instalar de novo.", error: "Erro: ",
+    denied: "O acesso MIDI (SysEx) não foi permitido. Permita MIDI nas configurações do site (barra de endereço) e aperte Instalar de novo.",
+    notfound: "FM-1 não encontrado. Confira o cabo USB (de dados), feche outros apps que usam MIDI e aperte Instalar de novo.",
+    model: "O aparelho conectado não é um FM-1.", lost: "A conexão USB caiu. Reconecte e aperte Instalar de novo.",
+    noloader: "O FM-1 em modo de atualização não foi encontrado. Reconecte o cabo e aperte Instalar de novo (ele fica nesse modo até terminar).",
+    noreturn: "O FM-1 não voltou. Desligue e ligue de novo.", mismatch: "Gravado, mas o FM-1 informa outra versão: ",
+    foreign: "O FM-1 está no modo de atualização de outro firmware. Termine essa atualização com o atualizador dele (M-UPGRADE) e aperte Instalar de novo: ",
+    badpkg: "O arquivo de instalação está danificado. Recarregue a página.", leave: "Gravando. Não feche a página.",
+    license: "GPL-3.0, sem garantia. Código:", stockTitle: "Voltar ao firmware oficial (V15)",
+    stockHelp: "Baixe o FM-1 V15 oficial no site da M-VAVE e escolha o FM-1.fwsc de dentro dele, sem modificar. O arquivo é conferido neste navegador e não é enviado a lugar nenhum.",
+    stockBackup: "O firmware oficial não abre músicas, projetos nem samples do SLOOP / No Man Sky FM. Anote ou grave antes o que quiser guardar.",
+    stockEditor: "Abrir o editor para o backup", stockSaved: "Salvei um backup neste computador", stockFile: "O FM-1.fwsc oficial", stockGo: "Instalar o V15 oficial",
+    stockValid: "V15 oficial conferido", stockBad: "Não é o V15 oficial: ", stockConfirm: "Instalar o V15 oficial no FM-1? O firmware oficial não abre músicas do No Man Sky FM. Você fez backup?",
+    stockFinish: "O FM-1 está no modo de atualização do SLOOP / No Man Sky FM. Aperte Instalar para terminar essa atualização e depois volte ao V15 oficial.",
+    back: "O atualizador da própria M-VAVE, M-UPGRADE (Downloads → PC Software), também funciona. Se ele não achar o FM-1, feche outros apps e abas que usam MIDI.",
+  },
+};
+const t = (k) => (TEXT[document.documentElement.dataset.l] || TEXT.en)[k] ?? TEXT.en[k];
+addEventListener("nms-lang", () => applyLang());   // (the page switched EN / PT)
+let lastKey = null, lastArg = "";
+function applyLang() {
+  document.querySelectorAll("[data-t]").forEach((e) => { e.textContent = t(e.dataset.t); });
+  if (lastKey) $("status").textContent = t(lastKey) + lastArg;
+}
+applyLang();
+const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textContent = t(k) + arg; };
+const say = (txt) => { lastKey = null; $("status").textContent = txt; };
+const log = (t) => { $("log").textContent += t + "\n"; };
+let image = null;
+const meta = {"version": "0.4", "product": "FM-1_900", "pkg": "firmware/nomanskyfm-0.4.fwsc", "sha256": "192cc140c93d579033c9372d14555f024c85b35c5fd74f3169c40e2d274fdc71"};
+
+let writing = false, stock = null;
+const lockAll = (on) => {
+  writing = on;
+  $("go").disabled = on || !image;
+  $("stock-go").disabled = on || !stock || !$("stock-saved").checked;
+  $("stock-file").disabled = on;
+};
+window.addEventListener("beforeunload", (e) => { if (writing) { e.preventDefault(); e.returnValue = t("leave"); } });
+
+(async () => {
+  if (!navigator.requestMIDIAccess) { sayK("nomidi"); return; }
+  try {
+    const r = await fetch(meta.pkg);
+    if (!r.ok) throw new Error(`${meta.pkg}: HTTP ${r.status}`);
+    const pkg = new Uint8Array(await r.arrayBuffer());
+    if (productOf(pkg) !== meta.product) { sayK("badpkg"); return; }
+    if (meta.sha256 && self.crypto && crypto.subtle) {   /* a damaged download is never offered (the loader checks its CRC too) */
+      const h = [...new Uint8Array(await crypto.subtle.digest("SHA-256", pkg))].map((b) => b.toString(16).padStart(2, "0")).join("");
+      if (h !== meta.sha256) { sayK("badpkg"); log(`sha256 ${h}, expected ${meta.sha256}`); return; }
+    }
+    image = logicalImage(pkg);
+    sayK("ready", meta.version);
+    lockAll(writing);
+  } catch (e) { sayK("loadfail", e.message); }
+})();
+
+const total = 74 + 1179;                           /* reads: step 1, step 2 (head + app area, SLOOP 2.0 loader) */
+const step = (k, a) => {
+  log(`${k} ${a ?? ""}`);
+  if (k === "start") sayK("start");
+  if (k === "verify") { sayK("verify"); $("bar").value = Math.min(100, (a / total) * 100); }
+  if (k === "loader") sayK("loader");
+  if (k === "write") { sayK("write"); $("bar").value = Math.min(100, ((74 + a) / total) * 100); }
+  if (k === "reboot") sayK("reboot");
+  if (k === "done") { $("bar").value = 100; sayK("done"); }
+};
+const failed = (e) => {
+  if (e && e.code && TEXT.en[e.code]) sayK(e.code, e.detail || "");
+  else sayK("error", e && e.message);
+  log(String(e && e.stack || e));
+};
+
+$("go").addEventListener("click", async () => {
+  if (writing) return;
+  lockAll(true);
+  let midi;
+  try { midi = await navigator.requestMIDIAccess({ sysex: true }); }
+  catch (e) { sayK("denied"); lockAll(false); return; }
+  try {
+    const up = new Updater(midi, log);
+    const ota = await up.find((id) => /^ota-/i.test(id.model));
+    if (ota) {
+      ota.link.close();
+      sayK((await up.resume(image, step)) ? "done" : "stopped");
+    } else {
+      await up.install(image, meta.product, step);
+    }
+  } catch (e) { failed(e); }
+  lockAll(false);
+});
+
+/* back to the official V15 (after Felucca 1.0): only the exact official file, a backup first (the editor),
+   through the same update path as M-UPGRADE; a device left in the official updater's mode is finished */
+$("stock-saved").addEventListener("change", () => lockAll(writing));
+$("stock-file").addEventListener("change", async () => {
+  const f = $("stock-file").files[0];
+  stock = null;
+  lockAll(writing);
+  if (!f) return;
+  try { stock = await validateStockPackage(new Uint8Array(await f.arrayBuffer())); sayK("stockValid"); }
+  catch (e) { sayK("stockBad", e.message); }
+  lockAll(writing);
+});
+$("stock-go").addEventListener("click", async () => {
+  if (writing || !stock || !$("stock-saved").checked || !confirm(t("stockConfirm"))) return;
+  lockAll(true);
+  let midi;
+  try { midi = await navigator.requestMIDIAccess({ sysex: true }); }
+  catch (e) { sayK("denied"); lockAll(false); return; }
+  try {
+    const up = new Updater(midi, log);
+    const ota = await up.find((id) => /^ota-/i.test(id.model));
+    if (ota) {
+      ota.link.close();
+      if (OUR_LOADER(ota.id)) sayK("stockFinish");    /* SLOOP's loader: finish SLOOP first (Install) */
+      else sayK((await up.resume(stock.image, step, { product: stock.product })) ? "done" : "stopped");
+    } else {
+      await up.install(stock.image, stock.product, step);
+    }
+  } catch (e) { failed(e); }
+  lockAll(false);
+});
+</script>
+<!--/INSTALLER-->
+</body>
+</html>
