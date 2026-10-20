@@ -177,7 +177,7 @@
   <section class="inst" id="install">
     <div class="ihead">
       <button id="go" disabled data-t="install"></button>
-      <span class="ver"><b>No Man Sky FM v0.4</b><br><span lang="en">based on SLOOP 2.7.1</span><span lang="pt">baseado no SLOOP 2.7.1</span></span>
+      <span class="ver"><b>No Man Sky FM v0.5</b><br><span lang="en">based on SLOOP 2.7.1</span><span lang="pt">baseado no SLOOP 2.7.1</span></span>
       <div class="imeta"><p class="small" data-t="intro"></p><p class="small" data-t="warn"></p></div>
     </div>
     <div class="prog"><progress id="bar" max="100" value="0"></progress><span id="pct">0%</span></div>
@@ -354,9 +354,24 @@
     </div>
   </section>
 
+  <section class="sloop" id="new05">
+    <h2><span lang="en">New in 0.5</span><span lang="pt">Novo na 0.5</span><span class="badge">v0.5</span></h2>
+    <p class="sub"><span lang="en">The galaxy got busier:</span><span lang="pt">A galáxia ficou mais movimentada:</span></p>
+    <ul>
+      <li><span lang="en">battles out in space: a boss that fires bursts and goes down in 30 s, little ships that keep coming</span><span lang="pt">batalhas no espaço: um chefão que dispara rajadas e cai em 30 s, naves menores que não param de chegar</span></li>
+      <li><span lang="en">pirates raid the system now and then: 2 to 6 ships, three at a time</span><span lang="pt">piratas invadem o sistema de vez em quando: de 2 a 6 naves, três de cada vez</span></li>
+      <li><span lang="en">hold keys to call escorts: little white ships with long trails that hunt with you</span><span lang="pt">segure teclas para chamar escoltas: naves brancas pequenas com rastros longos que caçam com você</span></li>
+      <li><span lang="en">races on planets and on a neon road in space, with gears and a pixel dashboard</span><span lang="pt">corridas nos planetas e numa estrada neon no espaço, com marchas e painel em pixel</span></li>
+      <li><span lang="en">a hangar in every station: five ships, engine and weapon upgrades</span><span lang="pt">um hangar em cada estação: cinco naves, upgrades de motor e arma</span></li>
+      <li><span lang="en">people on some planets with quests, ships passing by that talk to you</span><span lang="pt">personagens em alguns planetas com missões, naves que passam e conversam com você</span></li>
+      <li><span lang="en">REC keeps the arp and the punch-in FX, saved with the project</span><span lang="pt">o REC grava o arp e os FX de punch-in, salvos junto com o projeto</span></li>
+      <li><span lang="en">a new take-off and close-up drawn from a 3D model of the ship</span><span lang="pt">nova decolagem e close-up desenhados a partir de um modelo 3D da nave</span></li>
+    </ul>
+  </section>
+
   <section class="sloop" id="sloop">
     <h2><span lang="en">Up to date with SLOOP 2.7.1</span><span lang="pt">Atualizado com o SLOOP 2.7.1</span><span class="badge">SLOOP 2.7.1</span></h2>
-    <p class="sub"><span lang="en">No Man Sky FM 0.4 merges SLOOP 2.6 → 2.7.1, in this firmware’s look:</span><span lang="pt">O No Man Sky FM 0.4 traz o SLOOP 2.6 → 2.7.1, no visual deste firmware:</span></p>
+    <p class="sub"><span lang="en">No Man Sky FM 0.5 is built on SLOOP 2.6 → 2.7.1, in this firmware’s look:</span><span lang="pt">O No Man Sky FM 0.5 é baseado no SLOOP 2.6 → 2.7.1, no visual deste firmware:</span></p>
     <ul>
       <li><span lang="en">the sound on both cores of the FM-1</span><span lang="pt">o som nos dois núcleos do FM-1</span></li>
       <li><span lang="en">15 arp modes, KBD HOLD</span><span lang="pt">15 modos de arp, KBD HOLD</span></li>
@@ -813,7 +828,7 @@ const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textCont
 const say = (txt) => { lastKey = null; $("status").textContent = txt; };
 const log = (t) => { $("log").textContent += t + "\n"; };
 let image = null;
-const meta = {"version": "0.4", "product": "FM-1_900", "pkg": "firmware/nomanskyfm-0.4.fwsc", "sha256": "192cc140c93d579033c9372d14555f024c85b35c5fd74f3169c40e2d274fdc71"};
+const meta = {"version": "0.5", "product": "FM-1_900", "pkg": "firmware/nomanskyfm-0.5.fwsc", "sha256": "a0852a4ed57a5b6a96531dc4eddd65fc855f08aa815a1198dd4d546b49eb0e20"};
 
 let writing = false, stock = null;
 const lockAll = (on) => {

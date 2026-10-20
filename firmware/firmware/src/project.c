@@ -24,7 +24,8 @@
 #ifndef UI_SMALL                 /* (2.7) compiled for size: not the audio path (gfx.c UI_SMALL); the host tests: nothing */
 #define UI_SMALL
 #endif
-#define PROJ_MAGIC 0x46554E36u                 /* "FUN6": format 5 + the 2.6 parameters, nudge and condition in a byte */
+#define PROJ_MAGIC 0x46554E37u                 /* "FUN7" (No Man Sky FM): format 6 + the recorded punch-in FX (11 changes) */
+#define PROJ_MAGIC_V6 0x46554E36u              /* "FUN6": format 5 + the 2.6 parameters, nudge and condition in a byte */
 #define PROJ_MAGIC_V5 0x46554E35u              /* "FUN5": format 4 + per-step nudge, parameter locks, fill conditions (SLOOP 2.4) */
 #define PROJ_MAGIC_V4 0x46554E34u              /* "FUN4": four tracks, P_COUNT parameters each, 10-byte steps; read only */
 #define PROJ_MAGIC_V3 0x46554E33u              /* "FUN3": SLOOP 1.x; read only */
@@ -61,8 +62,16 @@ typedef struct {
     int16_t g[PROJ_NG];
     uint8_t sel, drdly, rsv[2];                /* the selected track; 2.5: G_DRDLY */
     proj_trk_t t[NTRK];
+    uint8_t fx_len, fx_n, fx_ev[11][2];         /* (format 7) the FX lane: its length, its changes (step, effect + 1) */
     uint32_t sum;
 } project_t;
+typedef struct {                               /* format 6 (SLOOP 2.6 .. 2.7), read and converted */
+    uint32_t magic, size;
+    int16_t g[PROJ_NG];
+    uint8_t sel, drdly, rsv[2];
+    proj_trk_t t[NTRK];
+    uint32_t sum;
+} project_v6_t;
 static int16_t pt_get(const proj_trk_t *t, uint32_t id)   /* p[id] of a stored track */
 {
     return id < PROJ_NC6 ? t->p[id] : id < P_E0 ? (int16_t)t->x[id - PROJ_NC6] : t->e[(id - P_E0) & 7u];
@@ -148,7 +157,8 @@ typedef struct {                               /* format 1 (until 0.5 beta), rea
 } project_v1_t;
 _Static_assert(sizeof(project_v2_t) == 2552u && sizeof(project_v1_t) == 688u && sizeof(project_v3_t) == 2584u &&
                sizeof(project_v4_t) == 3112u && sizeof(project_v5_t) == 3840u, "formats 1 / 2 / 3 / 4 / 5 as they were stored");
-_Static_assert(sizeof(project_t) <= 3840u, "format 6 fits one flash object (storage.c ST_PAYLOAD_MAX)");
+_Static_assert(sizeof(project_v6_t) == 3816u, "format 6 as it was stored");
+_Static_assert(sizeof(project_t) <= 3840u, "format 7 fits one flash object (storage.c ST_PAYLOAD_MAX)");
 project_t proj_slot[4] __attribute__((section(".noinit")));
 
 UI_SMALL static uint32_t proj_hash(const void *p, uint32_t n)   /* FNV-1a over n bytes */
@@ -306,6 +316,18 @@ UI_SMALL static int proj_from_v5(project_t *q, const project_v5_t *v5, int n)
     return 1;
 }
 
+/* a format 6 project -> format 7: the same, no FX recorded */
+UI_SMALL static int proj_from_v6(project_t *q, const project_v6_t *v6, int n)
+{
+    if (n != (int)sizeof *v6 || v6->magic != PROJ_MAGIC_V6 || v6->size != sizeof *v6 || v6->sum != proj_hash(v6, sizeof *v6 - 4u))
+        return 0;
+    memset(q, 0, sizeof *q);
+    memcpy(q, v6, sizeof *v6 - 4u);
+    q->magic = PROJ_MAGIC;
+    q->size = sizeof *q;
+    q->sum = proj_sum(q);
+    return 1;
+}
 /* a format 3 project -> slot q as format 6 */
 UI_SMALL static void proj_from_v3_ok(project_t *q, const project_v3_t *v3)
 {
@@ -382,7 +404,7 @@ UI_SMALL static int proj_import(project_t *q, const void *b, int n)
         memcpy(q, b, sizeof *q);
         return 1;
     }
-    return proj_from_v5(q, (const project_v5_t *)b, n) || proj_from_v4(q, (const project_v4_t *)b, n) ||
+    return proj_from_v6(q, (const project_v6_t *)b, n) || proj_from_v5(q, (const project_v5_t *)b, n) || proj_from_v4(q, (const project_v4_t *)b, n) ||
            proj_from_v3(q, (const project_v3_t *)b, n) ||
            proj_from_v2(q, (const project_v2_t *)b, n) || proj_from_v1(q, (const project_v1_t *)b, n);
 }
@@ -479,6 +501,16 @@ UI_SMALL static void proj_capture(project_t *p)        /* what is playing now, a
         memcpy(p->t[i].lock, trk[i].lock, sizeof trk[i].lock);
     }
     drum_tw_put(p);                                     /* (2.7) the drum sounds' TUNE and DECAY */
+#ifndef PROJ_HOST
+    {   /* the FX lane: its changes (11 at most) */
+        uint32_t n = 0, prev = 0x100u;
+        p->fx_len = fxl_len;
+        for (i = 0; i < fxl_len && n < 11u; i++)
+            if (fxl[i] != prev)
+                p->fx_ev[n][0] = (uint8_t)i, p->fx_ev[n][1] = fxl[i], prev = fxl[i], n++;
+        p->fx_n = (uint8_t)n;
+    }
+#endif
     p->sum = proj_sum(p);
 }
 
@@ -496,6 +528,18 @@ static void proj_apply(const project_t *p, int all)
             song.g[i] = (int16_t)clamp(p->g[i], GP[i].min, GP[i].max);
     song.g[G_DRDLY] = (int16_t)clamp(p->drdly, GP[G_DRDLY].min, GP[G_DRDLY].max);   /* (a load and a section, as REV) */
     proj_tx_get(p);                                     /* GLO > TEXTURE (2.6): a load and a section */
+#ifndef PROJ_HOST
+    {   /* the FX lane back (a load and a section) */
+        uint32_t e, j;
+        memset(fxl, 0, sizeof fxl);
+        fxl_len = p->fx_len <= NSTEP ? p->fx_len : 0u;
+        for (e = 0; e < p->fx_n && e < 11u; e++)
+            for (j = p->fx_ev[e][0]; j < (e + 1u < p->fx_n ? p->fx_ev[e + 1u][0] : fxl_len) && j < fxl_len; j++)
+                fxl[j] = p->fx_ev[e][1] <= 40u ? p->fx_ev[e][1] : 0u;
+        if (fxl_owns)
+            punch.req = -1, fxl_owns = 0, fxl_cur = -1;
+    }
+#endif
     drum_tw_get(p);                                     /* (2.7) the drum sounds' TUNE and DECAY: a load and a section */
     for (k = 0; k < NTRK; k++) {
         track_t *t = &trk[k];

@@ -905,7 +905,9 @@ UI_SMALL static int layers_input(uint32_t note_edges, uint32_t *pressed, uint32_
         if (press) {
             used[held] = 1;
             if (press & ob) {                             /* (the top shows 1 undo / 2 redo: a message only for nothing) */
-                if (!undo_swap(0))
+                if (fx_unreset())                         /* (REC + FX was the last: the effects back) */
+                    ui_message("FX BACK");
+                else if (!undo_swap(0))
                     ui_message("NOTHING TO UNDO");
             } else if (!undo_swap(1)) {
                 ui_message("NOTHING TO REDO");
@@ -985,6 +987,21 @@ UI_SMALL static void holds_input(uint32_t pressed, uint32_t now_ms)
         rec_t0 = now_ms;
         rec_on = 1;
         rec_toggle();
+    }
+    {   /* (No Man Sky FM) REC + FX, either first: the track's effects to their defaults (no recording; EDIT + OCT-
+         * brings them back) */
+        static uint32_t fprev;
+        uint32_t fb = 1u << panel.btn[B_FX], fdown = fm1_in.buttons & fb, fpress = fdown & ~fprev;   /* (FX is the layer's:
+                                                         * its press is read here from the buttons) */
+        fprev = fdown;
+        if (((fpress && rec_down) || ((pressed & rb) && fdown)) && (punch.req < 0 || fxl_owns) && !(eaten && (pressed & rb))) {
+            /* (the user) not while an effect plays (FX held with its key, then REC: that is a recording of it), nor when
+             * this REC closed a free take */
+            song.rec = prev_rec, rec_wait = prev_wait, eaten = 1;
+            fx_reset(TSEL);
+            ui_message("FX CLEARED");
+            ui.force = 1;
+        }
     }
     if (rec_down && rec_on && !eaten && !ui.hold_kind && now_ms - rec_t0 >= 700u) {
         song.rec = prev_rec;                              /* a hold: the press is undone */
@@ -1205,6 +1222,8 @@ UI_SMALL static void ui_input(void)
     }
     if ((s = panel_enc(EN_ALGO)) != 0 && !ft_on)     /* ALGORITHM: the selected track, on every page (not in a take) */
         track_select((uint32_t)clamp((int32_t)song.sel + (s > 0 ? 1 : -1), 0, NTRK - 1));
+    if (!ui.home && cur_page()->scope == SC_TRK && !ft_on && g.mode == GM_DOCK && (s = panel_enc(EN_SELECT)) != 0)
+        g_sel(s);                                   /* (the game's station: SELECT turns the ships) */
     if ((s = panel_enc(EN_SELECT)) != 0 && (rec_wait || ft_on || !page_walk(s))) {   /* SELECT: the pages of the
                                                      * family shown, else (and on the REC screen) the tempo */
         song.g[G_BPM] = (int16_t)clamp(song.g[G_BPM] + accel(EN_SELECT, s, 200), GP[G_BPM].min, GP[G_BPM].max);

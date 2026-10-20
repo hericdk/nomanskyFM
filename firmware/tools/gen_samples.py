@@ -40,6 +40,8 @@ GENDIR = SRC / "build" / "genwav"
 CACHE = SRC / "build" / "gen_samples.cache"
 CC0 = SRC / "assets" / "samples-cc0"
 TR = 22050                                   # stored sample rate
+SET_RATE = {"PIANO": 16000, "HORNS": 16000, "STRGS": 16000, "FLUTE": 16000, "SCRCH": 16000}   # (No Man Sky FM: room for the
+                                             # battle; only the top is lost. BASS and the kit as they were)
 
 # set -> kind ("oneshot" decaying, "sus" looped sustain, "piano" its attack then a steady loop that the
 # envelope fades, "kit" one sample per key).
@@ -90,7 +92,7 @@ GM_ROLE_WORDS = [("bassdrum", "kick"), ("kick", "kick"), ("snare", "snare"), ("h
                  ("conga", "conga"), ("claves", "claves"), ("wood", "wood"), ("crash", "crash"), ("ride", "ride")]
 GM_KEEP = {"crash": 0.6, "ride": 0.6, "ohh": 0.6}   # (SLOOP 2.5: the cymbals 1.0 -> 0.6 s, 12.8 KB of flash back;
                                                       # the first 0.44 s as recorded, then a fade: GM_FADE)
-GM_RATE = {"chh": 32000, "ohh": 32000, "crash": 32000, "ride": 32000}   # the metal keeps its top (else TR)
+GM_RATE = {"chh": 22050, "ohh": 22050, "crash": 22050, "ride": 22050}   # the metal at 22 kHz too (No Man Sky FM: the flash for the screens; 32 kHz before)
 # an acoustic kit from the CC0 recordings (assets/samples-cc0/KIT: VCSL): the concert bass drum and the toms
 # get a shorter body (a kit's tuned-up, damped heads): their level falls as exp(-t / tau) after a hold
 GM_SHAPE = {"kick": (0.03, 0.13), "tomlo": (0.04, 0.22), "tomhi": (0.04, 0.2)}
@@ -129,6 +131,7 @@ def name_note(name):
 
 def cc0_entries(setname, kind):
     """-> [(file name, int16 samples at TR, loop or None, root)]"""
+    R = SET_RATE.get(setname, TR)                # a lower stored rate where the top is not missed
     files = sorted((CC0 / setname).glob("*.wav"))
     out, conv = [], 1
     if kind != "kit" and not all(re.search(r"_m\d+\.wav$", p.name) for p in files):
@@ -161,29 +164,29 @@ def cc0_entries(setname, kind):
                     root = det
         else:
             root = hz_to_midi(detect_hz(x, sr))
-        x = resample(x, sr, TR)
+        x = resample(x, sr, R)
         keep = {"oneshot": 1.0, "sus": 0.95, "kit": 0.6, "piano": 1.0}[kind]
-        x = x[:int(keep * TR)]
+        x = x[:int(keep * R)]
         n = len(x)
         if kind == "piano":                          # the attack, then a steady tone the envelope (DEC) fades:
-            ls, le, xf, a0 = int(0.55 * TR), n - 1, int(0.08 * TR), int(0.30 * TR)   # long notes in 1 s
-            w = int(0.02 * TR)
+            ls, le, xf, a0 = int(0.55 * R), n - 1, int(0.08 * R), int(0.30 * R)   # long notes in 1 s
+            w = int(0.02 * R)
             env = [max(1e-6, (sum(v * v for v in x[max(0, i - w):i + w]) / (2 * w)) ** 0.5) for i in range(0, n, w)]
             ref = env[a0 // w]
             x = [v * (ref / env[min(len(env) - 1, i // w)] if i >= a0 else 1.0) for i, v in enumerate(x)]
-            ls = best_loop_start(x, le, xf, int(0.45 * TR), int(0.65 * TR))   # (the tone in phase: no dip)
+            ls = best_loop_start(x, le, xf, int(0.45 * R), int(0.65 * R))   # (the tone in phase: no dip)
             for i in range(xf):
                 a = i / xf
                 x[le - xf + i] = x[le - xf + i] * (1 - a) + x[ls - xf + i] * a
             loop = (ls, le)
         elif kind == "sus":                          # crossfaded sustain loop in the steady part
-            ls, le, xf = int(0.40 * TR), n - 1, int(0.06 * TR)
+            ls, le, xf = int(0.40 * R), n - 1, int(0.06 * R)
             for i in range(xf):
                 a = i / xf
                 x[le - xf + i] = x[le - xf + i] * (1 - a) + x[ls - xf + i] * a
             loop = (ls, le)
         else:
-            fade = int(0.08 * TR)
+            fade = int(0.08 * R)
             for i in range(fade):
                 x[n - fade + i] *= 1 - i / fade
             loop = None
@@ -347,7 +350,7 @@ class Builder:
         for k, (_, s, loop, root) in enumerate(cc0_entries(name, kind)):
             ls, le = loop if loop else (len(s), len(s))
             off, st = self.add(s, ls)
-            entries.append(dict(off=off, n=len(s), ls=ls, le=le, looped=bool(loop), sr=TR,
+            entries.append(dict(off=off, n=len(s), ls=ls, le=le, looped=bool(loop), sr=SET_RATE.get(name, TR),
                                 root16=int(round(root * 16)), pred=st[0], idx=st[1],
                                 key=KIT_BASE + k if kind == "kit" else None))
         self.add_set(name, kind, entries)

@@ -1,9 +1,9 @@
 # No Man Sky FM
 
-**A space adventure for the M-VAVE FM-1.** One hand flies the ship with two knobs, the other makes the music. Land on planets, mine, fight robots, warp between stars, and play the soundtrack of your own journey. Current version **v0.4**, based on **SLOOP 2.7.1**.
+**A space adventure for the M-VAVE FM-1.** One hand flies the ship with two knobs, the other makes the music. Land on planets, mine, fight robots, warp between stars, and play the soundtrack of your own journey. Current version **v0.5**, based on **SLOOP 2.7.1**.
 
 - **Site, installer and 3D simulator (the real firmware in your browser, with sound):** https://hericdk.github.io/nomanskyFM/
-- **Install on your FM-1:** open the site in Chrome or Edge, connect the FM-1 by USB and press install. The package is also in [`release/nmsfm-0.4.fwsc`](release/).
+- **Install on your FM-1:** open the site in Chrome or Edge, connect the FM-1 by USB and press install. The package is also in [`release/nmsfm-0.5.fwsc`](release/).
 - **License:** GPL-3.0-only, like SLOOP and Felucca.
 
 ## The shortcuts that exist only here
@@ -47,6 +47,7 @@ Merged from SLOOP 2.6 → 2.7.1: the sound on both cores of the FM-1, 15 arp mod
 
 ## Changes
 
+- **v0.5:** battles in space (a boss in 30 s, little ships that keep coming), pirate raids, escorts called by holding keys, races on planets and in space (gears, pixel dashboard), a hangar with five ships and upgrades, quests and ships that talk to you, REC keeps the arp and the punch-in FX (saved with the project: format 7, older projects still load), a take-off and close-up drawn from a 3D model of the ship.
 - **v0.4:** launch version, based on SLOOP 2.7.1.
 
 ## Use it in your own work
@@ -62,7 +63,7 @@ The code is GPL-3.0-only, so any firmware you distribute that is based on it mus
 | Folder | Content |
 |---|---|
 | `index.html`, `assets/`, `media/`, `sim/` | The site: installer, 3D simulator (`sim/`) and the feature clips. |
-| `release/` | The firmware package (`nmsfm-0.4.fwsc`). |
+| `release/` | The firmware package (`nmsfm-0.5.fwsc`). |
 | `firmware/` | The complete source of that firmware (C, JieLi AC79), as the GPL requires. `sh firmware/build.sh` builds the package (see `firmware/BUILDING.md`). |
 
 **Rescue:** hold OCT− alone while switching the FM-1 on to enter the USB rescue mode and reinstall any firmware. Installing custom firmware is at your own risk.

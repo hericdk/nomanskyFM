@@ -186,7 +186,8 @@ static inline uint16_t swap16(uint32_t c) { return (uint16_t)(((c >> 8) & 0xFFu)
  * black is filled with CV_KEY instead; at its blit cv_backdrop paints the game's scene under it (cv_under: a pixel
  * is written only where the key still is, and not on 8 of each 16 of a Bayer mesh: those stay black, the 50 % mesh) */
 #define CV_KEY 0x0821u
-#define CV_MESH 8u                                         /* (8 of 16: the user's 50 %) */
+#define CV_MESH 10u                                        /* (10 of 16 black: the user wanted it darker, the words read) */
+#define CV_DIM(c) ((uint16_t)(((c) >> 1) & 0x7BEFu))         /* (the game under a screen: at half its light) */
 static uint8_t cv_keyreq, cv_keyed, cv_under;
 static uint32_t cv_ytop, cv_xleft;                          /* (where the band goes on the screen, for the mesh) */
 static int32_t cv_ox;                                       /* x offset (the backdrop of a band not at x 0) */
@@ -241,14 +242,14 @@ static inline void cv_pset(int32_t x, int32_t y, uint16_t c)
 {
     y += cv_oy, x += cv_ox;
     if ((uint32_t)x < cv_w && (uint32_t)y < cv_h && (!cv_under || cv_under_ok((uint32_t)x, (uint32_t)y)))
-        cv_px[(uint32_t)y * cv_w + (uint32_t)x] = swap16(c);
+        cv_px[(uint32_t)y * cv_w + (uint32_t)x] = swap16(cv_under ? CV_DIM(c) : c);
 }
 
 static void cv_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
 {
     int32_t x1 = x + w + cv_ox, y1 = y + h + cv_oy, i;
     x += cv_ox;
-    uint16_t sc = swap16(c);
+    uint16_t sc = swap16(cv_under ? CV_DIM(c) : c);
     y += cv_oy;                             /* clipped once, then filled row by row */
     if (x < 0)
         x = 0;
