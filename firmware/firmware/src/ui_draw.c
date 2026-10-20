@@ -6,6 +6,12 @@ static void n_page(void);
 static void n_layer(void);
 static void n_hold(void);
 static void n_rec(void);
+static void n_wavs(void);
+static void rw_tick(void);
+static int rw_show(void);
+static void rw_toggle(void);
+static int rw_view_on(void);
+static int g_home_single(void);
 static void n_menu(void);
 static void vz_tick(void);                             /* (the visualisers' memory of the sound) */
 
@@ -36,6 +42,9 @@ static void ui_draw(void)
     cv_keyreq = 0;
     pads_tick();
     vz_tick();
+    rw_tick();                                          /* (each track's sound over its loop: the REC windows) */
+    if (g_home_single())                                /* HOME tapped once on the game: the tracks' WAVs, open / closed */
+        rw_toggle();
     if (ft_bars) {                                      /* a free take closed: the loop it made */
         char m[24];
         uint32_t n = ft_bars;
@@ -49,7 +58,7 @@ static void ui_draw(void)
             ui_message(m);
         }
     }
-    if (ui.menu || ui.hold_kind || ui.layer != LY_PLAY || rec_wait || ft_on || !(ui.home || cur_page()->scope == SC_TRK)) {
+    if (ui.menu || ui.hold_kind || ui.layer != LY_PLAY || rec_wait || ft_on || rw_show() || rw_view_on() || !(ui.home || cur_page()->scope == SC_TRK)) {
         /* No Man Sky FM: every screen but the game's own shows the game behind it (gfx.c cv_keyreq, a 40 % mesh), and
          * whatever its bands leave gets the game too (cv_fill_gaps): no black backgrounds */
         g_step();
@@ -61,6 +70,8 @@ static void ui_draw(void)
         n_layer();
     else if ((rec_wait || ft_on) && !ui.menu)           /* armed / free take */
         n_rec();
+    else if ((rw_show() || rw_view_on()) && !ui.menu && (ui.home || cur_page()->scope == SC_TRK))
+        n_wavs();                                       /* recording over the loop (and 6 s after): the WAV windows */
     else if (ui.menu)
         n_menu();
     else if (ui.home || cur_page()->scope == SC_TRK)    /* TRACKS */

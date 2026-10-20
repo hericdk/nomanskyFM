@@ -174,6 +174,18 @@ static void n_stick(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)
             cv_line(x0 + a, y0 + b, x1 + a, y1 + b, c);
 }
 
+/* the bars' two new tones of a knob colour (after the user's references): 0 deep (the cells to fill), 1 light */
+static uint16_t n_tone(uint16_t c, int light)
+{
+    static const uint16_t K[4] = {NB, NG, NP, NO};
+    static const uint16_t T[2][4] = {{RGB(0x18, 0x28, 0x8C), RGB(0x0A, 0x46, 0x28), RGB(0x28, 0x12, 0x50), RGB(0x6E, 0x1E, 0x16)},
+                                     {RGB(0x60, 0xD8, 0xEC), RGB(0x78, 0xE6, 0x96), RGB(0xAA, 0x8C, 0xE6), RGB(0xF8, 0xD4, 0xA8)}};
+    uint32_t i;
+    for (i = 0; i < 4u; i++)
+        if (c == K[i])
+            return T[light ? 1 : 0][i];
+    return light ? NW : EN;
+}
 /* a knob in w x h: a bar that grows (a range; BK_MID from the middle) or turns (a choice); r 0..1000 */
 static void n_knob(int32_t x, int32_t y, int32_t w, int32_t h, int32_t r, uint32_t kind, uint16_t fg, uint16_t fc)
 {
@@ -190,16 +202,29 @@ static void n_knob(int32_t x, int32_t y, int32_t w, int32_t h, int32_t r, uint32
         n_disc(cx, cy, 3, fg);
         return;
     }
-    n_frame(x, y, w, h, 1, fg);
-    if (kind == BK_GROW) {
-        cv_rect(x + 2, y + 2, (w - 4) * r / 1000, h - 4, fc);
-    } else {                                            /* from the middle */
-        int32_t m = x + w / 2, e = x + 2 + (w - 4) * r / 1000;
-        cv_rect(m, y - 2, 1, h + 4, fg);
-        if (e > m)
-            cv_rect(m + 1, y + 2, e - m, h - 4, fc);
-        else
-            cv_rect(e, y + 2, m - e, h - 4, fc);
+    {   /* a range: a thin row of cells (1 px apart), no frame; the cells to fill in the space's navy, the filled ones a
+         * mesh of the knob's colour (no solid colour); BK_MID fills from a tick in the middle */
+        int32_t bh = h / 3 < 3 ? 3 : h / 3, by = y + (h - bh) / 2, cw = w >= 80 ? 4 : 3, n = (w + 1) / (cw + 1), i;
+        int32_t f = n * r / 1000, mid = n / 2;
+        for (i = 0; i < n; i++) {
+            int32_t cx = x + i * (cw + 1), on = kind == BK_GROW ? i < f : (f >= mid ? i >= mid && i < f : i >= f && i < mid);
+            if (!on) {
+                cv_rect(cx, by, cw, bh, n_tone(fc, 0));
+            } else {                                    /* lit: the core solid, a white line through it, and two rows
+                                                         * above and below fading out (dither: 1/2, 1/4) */
+                int32_t a, b;
+                cv_rect(cx, by, cw, bh, fc);
+                cv_rect(cx, by, cw, 1, n_tone(fc, 1));      /* (its light tone on top) */
+                if (bh >= 3)
+                    cv_rect(cx, by + bh / 2, cw, 1, NW);
+                for (b = 1; b <= 2; b++)
+                    for (a = 0; a < cw; a++)
+                        if (((cx + a + b) & (b == 1 ? 1 : 3)) == 0)
+                            cv_pset(cx + a, by - b, fc), cv_pset(cx + a, by + bh - 1 + b, fc);
+            }
+        }
+        if (kind == BK_MID)
+            cv_rect(x + mid * (cw + 1) - 1, by - 3, 1, bh + 6, fg);
     }
 }
 
@@ -877,14 +902,6 @@ static int32_t px_r(uint32_t fx)
 }
 
 /* ---------------------------------------------------------------- HOME --- */
-static uint32_t n_sound_no(uint32_t i)                  /* track i's sound: its number in the list (the drums: the kit) */
-{
-    uint32_t total;
-    if (i == TRK_DRUM)
-        return (uint32_t)drum_kit() + 1u;
-    return preset_pos_of(&trk[i], &total) + 1u;
-}
-
 static void n_home_head(uint32_t *cache)               /* the tempo, the transport, bar.beat, the beat */
 {
     char b[12];
@@ -958,19 +975,38 @@ static void n_page_pos(char *b)
     fmt_int(b + str_len(b), (int32_t)n);
 }
 
+/* a parameter's short label, written out (DLY: DELAY); the others as they are */
+static const char *rw_long(const char *l)
+{
+    static const char *const LN[][2] = {{"DST", "DRIVE"}, {"CHO", "CHORUS"}, {"DLY", "DELAY"}, {"REV", "REVERB"},
+        {"ATK", "ATTACK"}, {"DEC", "DECAY"}, {"SUS", "SUSTAIN"}, {"REL", "RELEASE"}, {"FLT", "FILTER"}, {"FILT", "FILTER"},
+        {"PIT", "PITCH"}, {"GLD", "GLIDE"}, {"LVL", "LEVEL"}, {"SWG", "SWING"}, {"SHP", "SHAPE"}, {"PHS", "PHASE"},
+        {"FDBK", "FEEDBACK"}, {"DTUNE", "DETUNE"}, {"COLR", "COLOR"}, {"AMP", "AMOUNT"}, {"SECT", "SECTION"}};
+    uint32_t i;
+    for (i = 0; i < sizeof LN / sizeof LN[0]; i++)
+        if (str_eq(l, LN[i][0]))
+            return LN[i][1];
+    return l;
+}
 /* one quarter (120 x 96) of a page: a value, its bar in the knob's colour; while its knob turns, the knob's texture
  * behind. kind BK_NONE + "" = empty; act: an action knob (LOAD, SAVE...), a square: of checks when it can act */
 static void n_quad(uint32_t k, const char *v, int32_t r, uint32_t kind, int act, uint32_t vz, int32_t vk, int32_t al,
-                   uint32_t *cache)
+                   const char *lb, uint32_t *cache)
 {
     int32_t hot = ui.hot_t && ui.hot_col == k, show = act < 0 && (v[0] || kind != BK_NONE) && (hot || al >= 0);
-    uint32_t sig = nhs(nh(nh((uint32_t)r / 4u, kind * 3u + (uint32_t)hot * 5u), (uint32_t)(act + 2) * 7u), v), n;
+    uint32_t sig = nhs(nhs(nh(nh((uint32_t)r / 4u, kind * 3u + (uint32_t)hot * 5u), (uint32_t)(act + 2) * 7u), v), lb ? lb : ""), n;
     if (show)
         sig = nh(sig, ui.frame + (uint32_t)al * 7919u);  /* (its visual moves: every frame) */
     if (!ui.force && sig == *cache)
         return;
     *cache = sig;
     cv_begin(120, 96, NK);
+    if (lb && lb[0] && act < 0) {                       /* what the knob edits, under its bar: its full name, large,
+                                                         * behind the visual (the number stays over it) */
+        const char *ln = rw_long(lb);
+        uint32_t z = n_fit(ln, 112, 2);
+        n_texto(60 - n_w(ln, z) / 2, z == 2u ? 62 : 72, ln, z, NCOL[k & 3u] == NP ? NW : NCOL[k & 3u]);
+    }
     if (show)                                           /* turned, a note played, the loop playing: its visual behind */
         n_vz(vz, 2, 2, 116, 92, r, NCOL[k & 3u], vk);
     else if (hot)
@@ -980,12 +1016,24 @@ static void n_quad(uint32_t k, const char *v, int32_t r, uint32_t kind, int act,
             n_tex(40, 22, 40, 40, PT_CHECK, NCOL[k & 3u]);
         n_frame(40, 22, 40, 40, 2, NW);
     } else if (v[0] || kind != BK_NONE) {
+        static uint32_t turned[4];                      /* (ms) its knob last turned */
+        int32_t a, f = 0;
         n = n_fit(v, 108, 4);
+        if (hot)
+            turned[k & 3u] = fm1_ms;
+        if (fm1_ms - turned[k & 3u] < 1000u)            /* turning: the number half-way to solid; let go: back in 1 s */
+            f = hot ? 256 : 256 - (int32_t)(fm1_ms - turned[k & 3u]) * 256 / 1000;
+        a = al + (((16 + al) / 2 - al) * f >> 8);
         if (al >= 0)                                    /* (the visuals by themselves: the number see-through) */
-            n_textd(60 - n_w(v, n) / 2, n == 4u ? 0 : n == 3u ? 8 : 18, v, n, NW, al);
+            n_textd(60 - n_w(v, n) / 2, n == 4u ? 0 : n == 3u ? 8 : 18, v, n, NW, a);
         else
             n_texto(60 - n_w(v, n) / 2, n == 4u ? 0 : n == 3u ? 8 : 18, v, n, NW);
-        n_knob(10, 70, 100, 16, r, kind, NW, NCOL[k & 3u]);
+        n_knob(10, 52, 100, 16, r, kind, NW, NCOL[k & 3u]);
+    }
+    if (lb && lb[0] && act >= 0) {                      /* an action's name (LOAD, SAVE...) */
+        const char *ln = rw_long(lb);
+        uint32_t z = n_fit(ln, 112, 2);
+        n_texto(60 - n_w(ln, z) / 2, z == 2u ? 62 : 72, ln, z, NW);
     }
     cv_blit((k & 1u) * 120u, 48u + (k >> 1) * 96u);
 }
@@ -1078,6 +1126,7 @@ static void n_page(void)
     const page_t *pg = cur_page();
     char v[4][8], pos[8];
     int32_t r[4] = {0, 0, 0, 0}, act[4] = {-1, -1, -1, -1};
+    const char *lb[4] = {0, 0, 0, 0};                    /* (the knobs' names, under their bars) */
     uint32_t kind[4] = {BK_NONE, BK_NONE, BK_NONE, BK_NONE}, c, vz[4] = {VZ_BARS, VZ_BARS, VZ_BARS, VZ_BARS};
     int32_t vk[4] = {0, 0, 0, 0};
     n_screen(SCR_PAGE);
@@ -1115,12 +1164,14 @@ static void n_page(void)
         r[3] = song.g[G_DRLVL] * 1000 / 127;
         kind[3] = BK_GROW;
         vz[1] = VZ_PITCH, vz[2] = VZ_GATE;
+        lb[0] = "SOUND", lb[1] = "TUNE", lb[2] = "DECAY", lb[3] = "LEVEL";
     } else if (pg->graph == GR_USER) {                  /* SAVE > USER: the slot, LOAD ERASE SAVE */
         int used = up_used(ui.uslot);
         fmt_int(v[0], (int32_t)ui.uslot + 1);
         r[0] = (int32_t)ui.uslot * 1000 / (int32_t)(UP_SLOTS - 1u);
         kind[0] = BK_GROW;
         act[1] = used, act[2] = used, act[3] = 1;
+        lb[0] = "SLOT", lb[1] = "LOAD", lb[2] = "ERASE", lb[3] = "SAVE";
     } else if (pg->scope == SC_STEP) {                  /* STEP: the step, its note, its length, its flags */
         vz[0] = VZ_STEPS, vz[1] = VZ_PITCH, vz[2] = VZ_GATE, vz[3] = VZ_STEPS;
         const step_t *st = &TSEL->step[ui.cursor];
@@ -1148,16 +1199,18 @@ static void n_page(void)
         fmt_int(v[3], (int32_t)c);
         r[3] = (int32_t)c * 333;
         kind[3] = BK_TURN;
+        lb[0] = "STEP", lb[1] = "NOTE", lb[2] = "LEN", lb[3] = "FLAGS";
     } else {
         for (c = 0; c < 4u; c++) {
             int16_t *vp;
             const param_desc_t *d = page_desc(pg, c, &vp);
             if (pg->graph == GR_SLOTS && c == 1u) {     /* PROJECT: ERASE, when the slot holds a project */
-                act[1] = project_used((uint32_t)song.g[G_SLOT] - 1u);
+                act[1] = project_used((uint32_t)song.g[G_SLOT] - 1u), lb[1] = "ERASE";
                 continue;
             }
             if (!d || !d->label || d->label[0] == '-')
                 continue;
+            lb[c] = d->label;
             if (d->fmt == F_ENUM && d->names == N_GO) { /* an action (LOAD, SAVE, CLEAR...) */
                 act[c] = 1;
                 continue;
@@ -1176,7 +1229,7 @@ static void n_page(void)
     (void)pos;
     n_carousel(&top);
     for (c = 0; c < 4u; c++)
-        n_quad(c, v[c], r[c], kind[c], act[c], vz[c], vk[c], vz_alpha(), &quad[c]);
+        n_quad(c, v[c], r[c], kind[c], act[c], vz[c], vk[c], vz_alpha(), lb[c], &quad[c]);
 }
 
 /* --------------------------------------------------------------- LAYER --- */
@@ -1589,6 +1642,12 @@ static void n_hold(void)
     }
 }
 
+#define RW_WH 53                                        /* (the REC windows: n_wavs below) */
+static void rw_frame(int32_t h, const char *title, int on);
+static const char *rw_name(uint32_t i, const char **role);
+static void rw_foot(int32_t y, const char *s, int play);
+static void rw_time(char *b, uint32_t ds);
+static void n_wavs_at(int32_t bot, int32_t room, int armed);
 /* ----------------------------------------------------------------- REC --- */
 /* armed (a ring: the first note, or PLAY, starts it), the count-in (4 3 2 1), a free take (the seconds; the
  * bars and the tempo it makes). The knobs: MODE, LENGTH, START, QUANT (2.7: ON / OFF) as the SLOOP REC screen */
@@ -1608,33 +1667,39 @@ static void n_rec(void)
     n_home_head(&head);
     sig = nh(nh(nh(take * 3u + count * 5u + free * 7u + rec_count * 11u + blink * 13u, rt), secs * 131u + bars),
              bpm * 7u + ci_beat);
-    if (ui.force || sig != body) {
-        body = sig;
-        cv_begin(240, 124, NK);
-        b[0] = (char)('1' + rt);                        /* the track it records, in a square */
-        b[1] = 0;
-        cv_rect(6, 4, 24, 24, NCOL[rt & 3u]);
-        n_text(14, 8, b, 1, NW);
-        if (take) {                                     /* the seconds, big; the loop it makes */
-            fmt_int(b, (int32_t)(secs > 99u ? 99u : secs));
-            n_disc(52, 16, 7, blink ? NW : NK);
-            n_text(40, 30, b, 5, NW);
+    if (!take && !count) {                              /* armed: the tracks' window (the one armed blinks), over the knobs */
+        n_wavs_at(184, 148, 1);
+    } else if (ui.force || sig != body) {
+        const char *role, *name = rw_name(rt, &role);
+        char s[40];
+        int32_t j;
+        cv_begin(240, RW_WH, NK);                       /* the track it records: its WAV window, empty yet */
+        rw_frame(RW_WH, name, take || count || blink);
+        for (j = 12; j < 228; j += 2)
+            cv_pset(j, 27, NW);
+        if (take) {                                     /* a free take: its time; the loop it makes, the tempo */
+            rw_time(s, ft_t * CTL * 10u / FS);
             if (bars) {
-                fmt_int(b, (int32_t)bars);
-                n_text(190, 14, b, 3, NW);
-                fmt_int(b, (int32_t)bpm);
-                n_text(184, 70, b, 2, NW);
+                str_cpy(s + 7, " | ", 4), fmt_int(s + str_len(s), (int32_t)bars);
+                str_cpy(s + str_len(s), bars == 1u ? " BAR " : " BARS ", 7), fmt_int(s + str_len(s), (int32_t)bpm);
+                str_cpy(s + str_len(s), " BPM", 5);
+            } else {
+                str_cpy(s + 7, " | FREE | ", 11), str_cpy(s + str_len(s), role, 8);
             }
-        } else if (count) {                             /* 4 3 2 1 */
-            b[0] = (char)('0' + 4u - (ci_beat > 3u ? 3u : ci_beat));
-            b[1] = 0;
-            n_text(120 - n_w(b, 6) / 2, 12, b, 6, NW);
-        } else {                                        /* armed: a ring that blinks (filled: it waits for PLAY) */
-            n_ring(120, 62, 44, 6, NW);
-            if (rec_count || blink)
-                n_disc(120, 62, rec_count ? 30 : 14, NW);
+            rw_foot(39, s, 1);
+        } else {
+            if (count) {                                /* 4 3 2 1, in the middle of the wave */
+                b[0] = (char)('0' + 4u - (ci_beat > 3u ? 3u : ci_beat)), b[1] = 0;
+                cv_rect(112, 17, 16, 21, NK);
+                n_text(116, 18, b, 1, NW);
+            }
+            str_cpy(s, count ? "COUNT IN | " : rec_count ? "ARMED: PLAY | " : "ARMED | ", 16);
+            fmt_int(s + str_len(s), song.g[G_BPM]), str_cpy(s + str_len(s), " BPM | ", 8);
+            str_cpy(s + str_len(s), role, 8);
+            rw_foot(39, s, 0);
         }
-        cv_blit(0, 60);
+        body = sig;
+        cv_blit(0, 130);
     }
     if (!take && !count) {
         uint32_t len = (uint32_t)clamp(TSEL->p[P_SLEN], 1, NSTEP);
@@ -1667,6 +1732,472 @@ static void n_rec(void)
         static const uint8_t RVZ[4][2] = {{0xFF, 0}, {VZ_STEPS, 0}, {0xFF, 0}, {0xFF, 0}};
         n_knobs(188, v, r, kind, RVZ, &foot);
     }
+}
+
+/* ---------------------------------------------------------- REC: WAVS --- */
+/* Recording over a playing loop, and 6 s after: each track a window of a WAV on an old desktop (its sound's name.WAV),
+ * the sound over its loop drawn as a waveform, the part played this pass solid, the rest (the pass before) a dither, the
+ * head a line; the track recording has a red dot and its time, the others ACCEPTED. Three or more tracks done: one
+ * FINAL_RESULT.WAV window, a lane each. The waveform is the track's real peak (fx.c / drums.c), a column per RW_W-th of
+ * its loop, fed every frame by rw_tick (ui_draw), so a track recorded earlier is already drawn */
+#define RW_W 216
+static uint8_t rw_amp[NTRK][RW_W], rw_was;
+static uint16_t rw_fr[NTRK], rw_mn[NTRK], rw_pl = 256; /* each lane's height (Q8: 0 hidden), as a minimised window
+                                                         * (Q8), the loop stopped (256 playing, 205: 20 % lower); eased */
+static uint16_t rw_idx[NTRK];
+static int16_t rw_last[NTRK], rw_rs[NTRK];             /* rw_rs: the column a take began at */
+static uint32_t rw_t0[NTRK], rw_hold, rw_done[NTRK];   /* rw_done: the columns recorded since (past RW_W: over it again) */
+static uint32_t rw_step_ms(void) { return 15000u / (uint32_t)clamp(song.g[G_BPM], 20, 300); }
+static uint32_t rw_loop_ds(uint32_t i) { return trk_len(&trk[i]) * rw_step_ms() / 100u; }   /* the loop, 1/10 s */
+static int32_t rw_col(uint32_t i)                       /* the head's column in track i's loop */
+{
+    const track_t *t = &trk[i];
+    uint32_t len = trk_len(t), sm = rw_step_ms(), f = fm1_ms - rw_t0[i];
+    if (f > sm)
+        f = sm;
+    return (int32_t)((((uint32_t)t->seq_idx % len) * sm + f) * RW_W / (len * sm)) % RW_W;
+}
+static uint16_t rw_ease(uint16_t v, int32_t tg)
+{
+    int32_t df = tg - (int32_t)v;
+    return (uint16_t)((int32_t)v + df / 5 + (df > 0) - (df < 0));
+}
+static void rw_tick(void)
+{
+    uint32_t i, rec = song.playing ? song.rec : 0u;
+    rw_pl = rw_ease(rw_pl, song.playing ? 256 : 205);
+    for (i = 0; i < NTRK; i++) {
+        track_t *t = &trk[i];
+        int32_t pk, lg = 0, a = 0, c, p, on = (int32_t)((rec >> i) & 1u), loop = !track_empty(t);
+        if (t->seq_idx != rw_idx[i])
+            rw_idx[i] = t->seq_idx, rw_t0[i] = fm1_ms;
+        if (i == TRK_DRUM)
+            pk = drums.peak, drums.peak = 0;
+        else
+            pk = t->peak, t->peak = 0;
+        rw_fr[i] = rw_ease(rw_fr[i], loop || on ? 256 : 0);   /* its lane: a loop or recording; the selected one, empty: */
+        rw_mn[i] = rw_ease(rw_mn[i], !loop && !on && i == song.sel ? 256 : 0);   /* a minimised window */
+        if (!song.playing)
+            continue;
+        if (pk >= 64) {                                 /* log, as the TRACKS meters: 48 (-54 dB) .. 128 */
+            while ((pk >> lg) > 1)
+                lg++;
+            a = clamp((lg * 8 + (((pk << 3) >> lg) & 7) - 62) * 11 / 56, 0, 11);
+        }
+        c = rw_col(i), p = rw_last[i];
+        if (on && !((rw_was >> i) & 1u))                /* a take begins here */
+            rw_rs[i] = (int16_t)c, rw_done[i] = 0, p = c;
+        if (c == p) {
+            if (a > rw_amp[i][c])
+                rw_amp[i][c] = (uint8_t)a;
+        } else {
+            while (p != c) {                            /* (the columns a frame jumped over: the same peak) */
+                p = (p + 1) % RW_W;
+                rw_amp[i][p] = (uint8_t)a;
+                rw_done[i] += (uint32_t)on;
+            }
+        }
+        rw_last[i] = (int16_t)c;
+    }
+    if (rw_was && !rec)
+        rw_hold = fm1_ms + 6000u;
+    rw_was = (uint8_t)rec;
+}
+static int rw_show(void) { return (song.playing && song.rec) || (rw_hold && (int32_t)(rw_hold - fm1_ms) > 0); }
+
+static const char *const RW_ROLE[8] = {"BASS", "KEYS", "ORGAN", "PAD", "LEAD", "PLUCK", "STAB", "FX"};
+static const char *rw_name(uint32_t i, const char **role)
+{
+    uint32_t tot, pos;
+    if (i == TRK_DRUM) {
+        *role = "DRUMS";
+        return DRUM_KIT_NAMES[drum_kit()];
+    }
+    pos = preset_pos_of(&trk[i], &tot);
+    *role = pos < NBANK ? RW_ROLE[BANK[pos].kind & 7u] : "USER";
+    return pos < NBANK ? BANK[pos].name : "USER";
+}
+static void rw_time(char *b, uint32_t ds)               /* 00:05.6 */
+{
+    uint32_t s = ds / 10u;
+    b[0] = (char)('0' + s / 600u % 10u), b[1] = (char)('0' + s / 60u % 10u), b[2] = ':';
+    b[3] = (char)('0' + s % 60u / 10u), b[4] = (char)('0' + s % 10u), b[5] = '.', b[6] = (char)('0' + ds % 10u), b[7] = 0;
+}
+static void rw_dith(int32_t x, int32_t y, int32_t w, int32_t h)   /* a 50 % checker */
+{
+    int32_t i, j;
+    for (j = 0; j < h; j++)
+        for (i = (x + y + j) & 1; i < w; i += 2)
+            cv_pset(x + i, y + j, NW);
+}
+/* the frame of a window h tall on the band: border, title bar (solid when it records, a dither when done), its name,
+ * the three little boxes, a dot (red: recording) */
+static void rw_frame(int32_t h, const char *title, int on)
+{
+    char b[24];
+    int32_t k;
+    cv_rect(4, 0, 232, h, NW);
+    cv_rect(5, 1, 230, h - 2, NK);
+    if (!on)
+        rw_dith(5, 1, 230, 13);
+    cv_rect(5, 14, 230, 1, NW);
+    str_cpy(b, title, 18);
+    str_cpy(b + str_len(b), ".WAV", 6);
+    for (k = 0; b[k]; k++)
+        if (b[k] == ' ')
+            b[k] = '_';
+    cv_rect(9, 5, 4, 4, on ? ER : NW);
+    n_texto(17, -1, b, 1, NW);
+    for (k = 0; k < 3; k++) {                           /* _ [] x */
+        int32_t x = 203 + k * 10;
+        cv_rect(x, 3, 9, 9, NW), cv_rect(x + 1, 4, 7, 7, NK);
+        if (k == 0)
+            cv_rect(x + 2, 8, 5, 2, NW);
+        else if (k == 1)
+            cv_rect(x + 2, 5, 5, 5, NW), cv_rect(x + 3, 6, 3, 3, NK);
+        else {
+            int32_t d;
+            for (d = 0; d < 5; d++)
+                cv_pset(x + 2 + d, 5 + d, NW), cv_pset(x + 6 - d, 5 + d, NW);
+        }
+    }
+}
+/* track i's waveform in x0.. (w columns), mid row y, half height hh, in colour c: the part played this pass a pixel
+ * gradient (dense in the middle, thinning out), the rest (the pass before) sparse, the middle a line, the head white.
+ * Recording (rec): ahead of the head a fading veil covers what is there; above and below, a contour: what this take has
+ * recorded (white), what is left of the loop before it comes round (dotted), and once round, what it records over
+ * again (yellow) */
+static void rw_wave(uint32_t i, int32_t x0, int32_t w, int32_t y, int32_t hh, int32_t head, uint16_t c, int rec)
+{
+    static const uint8_t BAY[16] = {0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5};   /* (4 x 4 ordered dither) */
+    int32_t j, done = (int32_t)rw_done[i], pass = done / RW_W, part = done % RW_W;
+    for (j = 0; j < w; j++) {
+        int32_t col = j * RW_W / w, a = rw_amp[i][col] * hh / 11, x = x0 + j, k, ahead = (col - head + RW_W) % RW_W;
+        int32_t veil = rec && ahead > 0 && ahead < 40 ? (40 - ahead) * 16 / 40 : 0;   /* 16 at the head .. 0 */
+        for (k = -a; k <= a; k++) {
+            int32_t ak = k < 0 ? -k : k, lv = col <= head ? 16 - ak * 12 / (a + 1) : 4;
+            uint32_t b = BAY[((y + k) & 3) * 4 + (x & 3)];
+            if (b < (uint32_t)lv && b >= (uint32_t)veil)
+                cv_pset(x, y + k, c);
+        }
+        if (veil)                                       /* the veil itself: a haze of the colour, fading */
+            for (k = -hh; k <= hh; k += 2)
+                if (BAY[((y + k) & 3) * 4 + (x & 3)] < (uint32_t)(veil / 3))
+                    cv_pset(x, y + k, c);
+        if ((col > head || !a) && !veil)
+            cv_pset(x, y, c);
+        if (rec) {                                      /* the take's contour */
+            int32_t ds = (col - rw_rs[i] + RW_W) % RW_W;
+            uint16_t lc = pass ? (ds <= part ? EY : NW) : (ds <= part ? NW : 0);
+            if (lc)
+                cv_pset(x, y - hh - 2, lc), cv_pset(x, y + hh + 2, lc);
+            else if ((x & 3) == 0)
+                cv_pset(x, y - hh - 2, NW), cv_pset(x, y + hh + 2, NW);
+        }
+    }
+    cv_rect(x0 + head * w / RW_W, y - hh - 2, 1, 2 * hh + 5, NW);
+}
+static void rw_foot(int32_t y, const char *s, int play)  /* the status line: > 00:01.8 | 170 BPM | DRUMS */
+{
+    int32_t k;
+    cv_rect(5, y, 230, 1, NW);
+    if (play)
+        for (k = 0; k < 4; k++)
+            cv_rect(9 + k, y + 4 + k, 1, 7 - 2 * k, NW);
+    n_text(play ? 17 : 9, y - 1, s, 1, NW);
+}
+static uint8_t rw_view;                                 /* HOME tapped on the game: the tracks' WAV, open */
+static void rw_toggle(void) { rw_view = (uint8_t)((rw_view + 1u) % 3u); }   /* game, the tracks' WAVs, the FX bay */
+static int rw_view_on(void) { return rw_view; }
+/* one window, its footer at bot: a lane a track with a loop, by number (the empty ones hidden; the one selected, empty:
+ * minimised, its name on a bar); a track starting to record grows its lane in among the others (rw_fr, rw_tick); the loop
+ * stopped: the lanes 20 % lower, their waves 20 % more. A lane: the number in the track's colour (the one selected or
+ * recording framed; past one pass of a take: x2, x3...), the level, the waveform in that colour. The title: the sound
+ * recording (.WAV) or FINAL_RESULT.WAV, the active track's number by the little boxes; the footer: the time (recording:
+ * of the loop's length), the tempo, the part recording or how many tracks. armed: REC waits (n_rec), its dot blinks */
+static void n_wavs_at(int32_t bot, int32_t room, int armed)
+{
+    uint32_t i, rec = song.playing ? song.rec : 0u, cur = song.sel, bpm = (uint32_t)song.g[G_BPM], m = 0, full = 0, lng = cur;
+    int32_t lh, hh[NTRK], mh[NTRK], sum = 0, mins = 0, top, y, blink = (int32_t)((fm1_ms / 300u) & 1u);
+    const char *role, *name;
+    char s[40], t[8], d[2];
+    for (i = 0; i < NTRK; i++) {
+        full += !track_empty(&trk[i]);
+        m += rw_fr[i] > 128u;
+        mins += rw_mn[i] > 128u;
+        if ((rec >> i) & 1u)
+            cur = i;
+        if (rw_fr[i] && trk_len(&trk[i]) > trk_len(&trk[lng]))
+            lng = i;
+    }
+    lh = m ? (room - 30 - 15 * mins) / (int32_t)m : 46;
+    lh = clamp(lh, 20, m > 3u ? 38 : 46);
+    for (i = 0; i < NTRK; i++) {
+        hh[i] = (lh * (int32_t)rw_fr[i] >> 8) * rw_pl >> 8;
+        mh[i] = 15 * (int32_t)rw_mn[i] >> 8;
+        sum += hh[i] + mh[i];
+    }
+    top = bot - (15 + sum + 15);
+    name = rw_name(cur, &role);
+    cv_begin(240, 15, NK);                              /* the title */
+    rw_frame(16, rec ? name : "FINAL RESULT", 1);
+    if (!rec)
+        cv_rect(9, 5, 4, 4, NW);
+    d[0] = (char)('1' + cur), d[1] = 0;                 /* the active track's number, by the boxes */
+    cv_rect(187, 2, 12, 11, NCOL[cur & 3u]);
+    n_text(189, 0, d, 1, NW);
+    cv_blit(0, (uint32_t)top);
+    for (i = 0, y = top + 15; i < NTRK; y += hh[i] + mh[i], i++) {
+        int32_t h = hh[i], pk = rw_amp[i][rw_col(i)], on = (int32_t)((rec >> i) & 1u);
+        uint16_t c = NCOL[i & 3u];
+        d[0] = (char)('1' + i);
+        if (mh[i] >= 2) {                               /* minimised: a title bar, its name.WAV */
+            const char *r2, *nm = rw_name(i, &r2);
+            char b[24];
+            int32_t k, h2 = mh[i];
+            cv_begin(240, (uint32_t)h2, NK);
+            cv_rect(4, 0, 1, h2, NW), cv_rect(235, 0, 1, h2, NW), cv_rect(5, 0, 230, h2, NK);
+            rw_dith(5, 1, 230, h2 - 2);
+            cv_rect(5, h2 - 1, 230, 1, NW);
+            cv_rect(9, 2, 12, 11, c);
+            n_text(11, 0, d, 1, NW);
+            str_cpy(b, nm, 18), str_cpy(b + str_len(b), ".WAV", 6);
+            for (k = 0; b[k]; k++)
+                if (b[k] == ' ')
+                    b[k] = '_';
+            n_texto(26, -1, b, 1, NW);
+            if (armed && blink)
+                cv_rect(193, 5, 4, 4, ER);
+            for (k = 0; k < 3; k++)
+                cv_rect(203 + k * 10, 3, 9, 9, NW), cv_rect(204 + k * 10, 4, 7, 7, NK);
+            cv_rect(205, 8, 5, 2, NW);
+            cv_blit(0, (uint32_t)y);
+        }
+        if (h < 2)
+            continue;
+        cv_begin(240, (uint32_t)h, NK);
+        cv_rect(4, 0, 1, h, NW), cv_rect(235, 0, 1, h, NW), cv_rect(5, 0, 230, h, NK);
+        {
+            uint16_t fc = i == cur ? (on || (armed && blink) ? ER : EY) : NW;
+            int32_t in = i == cur ? 2 : 1;
+            cv_rect(8, 2, 52, h - 4, fc), cv_rect(8 + in, 2 + in, 52 - 2 * in, h - 4 - 2 * in, NK);
+        }
+        cv_rect(13, 6, 18, 18, c);
+        n_text(18, 8, d, 1, NW);
+        if (on && rw_done[i] >= RW_W) {                 /* over the take again: x2, x3... */
+            char px[3] = {'x', (char)('1' + clamp((int32_t)(rw_done[i] / RW_W), 1, 8)), 0};
+            n_texto(35, 7, px, 1, EY);
+        }
+        {                                               /* the level meter: the peak of the last few columns, full at 7 of 11 */
+            int32_t q, hd = rw_col(i);
+            for (q = 1; q < 6; q++)
+                if (rw_amp[i][(hd - q + RW_W) % RW_W] > pk)
+                    pk = rw_amp[i][(hd - q + RW_W) % RW_W];
+            n_knob(12, h - 13, 44, 9, song.playing ? clamp(pk * 1000 / 7, 0, 1000) : 0, BK_GROW, NW, c);
+        }
+        rw_wave(i, 64, 168, h / 2, ((h / 2 - 4 > 1 ? h / 2 - 4 : 1) * rw_pl) >> 8, rw_col(i), c, on);
+        cv_rect(5, h - 1, 230, 1, NW);
+        cv_blit(0, (uint32_t)y);
+    }
+    cv_begin(240, 15, NK);                              /* the footer */
+    cv_rect(4, 0, 232, 15, NW), cv_rect(5, 0, 230, 14, NK);
+    if (rec) {                                          /* > 00:01.8 / 00:05.6 | KEYS (over it again: | OVER x2) */
+        rw_time(t, (uint32_t)rw_col(cur) * rw_loop_ds(cur) / RW_W);
+        str_cpy(s, t, 8), str_cpy(s + 7, " / ", 4);
+        rw_time(t, rw_loop_ds(cur));
+        str_cpy(s + str_len(s), t, 8), str_cpy(s + str_len(s), " | ", 4);
+        if (rw_done[cur] >= RW_W) {
+            char px[3] = {'x', (char)('1' + clamp((int32_t)(rw_done[cur] / RW_W), 1, 8)), 0};
+            str_cpy(s + str_len(s), "OVER ", 6), str_cpy(s + str_len(s), px, 3);
+        } else {
+            str_cpy(s + str_len(s), role, 8);
+        }
+    } else {                                            /* > 00:04 | 170 BPM | 3 TRACKS (whole seconds: it fits) */
+        rw_time(t, (uint32_t)rw_col(lng) * rw_loop_ds(lng) / RW_W);
+        str_cpy(s, t, 6), str_cpy(s + 5, " | ", 4);
+        fmt_int(s + str_len(s), (int32_t)bpm), str_cpy(s + str_len(s), " BPM | ", 8);
+        fmt_int(s + str_len(s), (int32_t)full), str_cpy(s + str_len(s), full == 1u ? " TRACK" : " TRACKS", 8);
+    }
+    rw_foot(0, s, song.playing);
+    cv_blit(0, (uint32_t)(top + 15 + sum));
+}
+/* ------------------------------------------------------------- FX BAY --- */
+/* HOME twice on the game (after the tracks' WAVs): the ship's bay, after a mod shop's blueprint. A row a track: its
+ * number on a yellow diamond, its sound, a bar of slanted cells that grows with the effects it uses (two cells each,
+ * pink to orange), how many in a small diamond; lines run from it to the effects' boxes on the right (each box lit
+ * when a track uses it), in the track's colour. On top how many tracks hold a loop and how many effects are on;
+ * under it the shortcuts: REC + FX clears a track's effects, EDIT + OCT- undoes */
+#define BY_BG RGB(0x0A, 0x0A, 0x2A)                     /* (the user: darker, the text reads over the game) */
+#define BY_GRID RGB(0x24, 0x2C, 0x78)
+#define BY_TEAL RGB(0x5E, 0xD8, 0xC8)
+#define BY_DIM RGB(0x2E, 0x6E, 0x86)
+#define BY_GOLD RGB(0xE8, 0xC0, 0x40)
+static const char *const BY_FX[7] = {"DRV", "CHO", "DLY", "REV", "FLT", "SLC", "INS"};
+#include "nms_nave_cima.h"
+/* the ship's four parts (its picture points up): 0 the engines (the back), 1 the wings (the sides), 2 the cabin (the
+ * nose), 3 the cargo (the middle); the anchors the selected track's line ends at */
+static uint32_t by_part(int32_t x, int32_t y)
+{
+    return y >= 26 ? 0u : (x < 15 || x > 32) ? 1u : y < 13 ? 2u : 3u;
+}
+static const int16_t BY_ANCH[4][2] = {{192, 226}, {156, 196}, {192, 174}, {192, 200}};
+static uint32_t by_nc(int32_t x, int32_t y)            /* the ship's picture from above: a pixel (>= 10: none) */
+{
+    uint32_t k;
+    if ((uint32_t)x >= (uint32_t)NMS_NC_W || (uint32_t)y >= (uint32_t)NMS_NC_H)
+        return 15u;
+    k = (uint32_t)(y * NMS_NC_W + x);
+    return (NMS_NC[k >> 1] >> ((k & 1u) ? 0u : 4u)) & 15u;
+}
+static uint32_t by_fx(uint32_t i)                       /* the effects track i uses: a bit each (BY_FX) */
+{
+    const track_t *t = &trk[i];
+    uint32_t m = 0;
+    m |= (t->p[P_DIST] > 0) << 0 | (t->p[P_CHOR] > 0) << 1;
+    m |= (i == TRK_DRUM ? song.g[G_DRDLY] > 0 : t->p[P_DLY] > 0) << 2;
+    m |= (i == TRK_DRUM ? song.g[G_DRREV] > 0 : t->p[P_REV] > 0) << 3;
+    m |= (t->p[P_TFLT] != 0) << 4 | (t->p[P_SLCR] != 0) << 5 | (t->p[P_ITYPE] != 0) << 6;
+    return m;
+}
+static void by_diam(int32_t cx, int32_t cy, int32_t r, uint16_t c, int fill)   /* a diamond */
+{
+    int32_t i, j;
+    for (j = -r; j <= r; j++)
+        for (i = -r; i <= r; i++) {
+            int32_t m = (i < 0 ? -i : i) + (j < 0 ? -j : j);
+            if (m == r || (fill && m < r))
+                cv_pset(cx + i, cy + j, m == r ? c : BY_BG);
+        }
+}
+static void n_bay(void)
+{
+    static int32_t shown[NTRK];                         /* (the bars grow: Q8 cells) */
+    uint32_t i, k, used = 0, loops = 0, fxn = 0, m[NTRK];
+    int32_t band;
+    char b[24];
+    for (i = 0; i < NTRK; i++) {
+        uint32_t q = m[i] = by_fx(i), c = 0;
+        used |= q, loops += !track_empty(&trk[i]);
+        while (q)
+            c += q & 1u, q >>= 1;
+        fxn += c;
+        shown[i] += ((int32_t)c * 2 * 256 - shown[i]) / 5 + ((int32_t)c * 512 > shown[i]) - ((int32_t)c * 512 < shown[i]);
+    }
+    for (band = 0; band < 2; band++) {
+        int32_t y0 = band * 120, x, y;
+        cv_begin(240, 120, NK);
+        cv_oy = -y0;
+        for (y = y0; y < y0 + 120; y++) {               /* (the user) see-through at the top, solid at the bottom: a
+                                                         * gradient in pixels (the game shows through the gaps) */
+            int32_t lv = 12 + y * 5 / 240;              /* (the user: denser, darker: 12/16 at the top) */
+            for (x = 0; x < 240; x++)
+                if ((int32_t)BAYER_N[y & 3][x & 3] < lv)
+                    cv_pset(x, y, BY_BG);
+        }
+        for (y = 18; y < 240; y += 12)                  /* the blueprint's grid */
+            for (x = 0; x < 240; x++)
+                if (x >= 150 || (x & 1))
+                    cv_pset(x, y, BY_GRID);
+        for (x = 150; x < 240; x += 12)
+            for (y = 18; y < 206; y++)
+                cv_pset(x, y, BY_GRID);
+        n_texto(8, 0, "FX BAY", 1, BY_TEAL);            /* the title, the counts */
+        fmt_int(b, (int32_t)loops), str_cpy(b + str_len(b), " TRK  ", 7);
+        fmt_int(b + str_len(b), (int32_t)fxn), str_cpy(b + str_len(b), " FX", 4);
+        n_texto(232 - n_w(b, 1), 0, b, 1, BY_GOLD);
+        for (k = 0; k < 7u; k++) {                      /* the effects' boxes, a bus down to the ship */
+            int32_t bx = 196, byy = 22 + (int32_t)k * 17;
+            uint16_t c = (used >> k) & 1u ? BY_TEAL : BY_DIM;
+            cv_rect(bx, byy, 38, 15, c), cv_rect(bx + 1, byy + 1, 36, 13, BY_BG);
+            n_text(bx + 7, byy - 2, BY_FX[k], 1, c);
+        }
+        for (y = 141; y < 168; y++)
+            cv_pset(215, y, used ? BY_TEAL : BY_DIM);
+        {   /* the ship, as a blueprint: its picture from above at 2 x, in four parts, a track each: 1 its engines, 2 its
+             * wings, 3 its cabin, 4 its cargo. The outline teal, the lines inside dimmer; the selected track's part lit in
+             * its colour (white outline); with the music playing each part pulses with its own track's sound */
+            int32_t sx, sy;
+            for (sy = 0; sy < NMS_NC_H; sy++)
+                for (sx = 0; sx < NMS_NC_W; sx++) {
+                    uint32_t v = by_nc(sx, sy), e, pt = by_part(sx, sy), lv;
+                    int32_t X = 144 + sx * 2, Y = 168 + sy * 2;
+                    if (v >= 10u)
+                        continue;
+                    lv = song.playing && !track_empty(&trk[pt]) ? rw_amp[pt][rw_col(pt)] : 0u;
+                    e = by_nc(sx - 1, sy) >= 10u || by_nc(sx + 1, sy) >= 10u || by_nc(sx, sy - 1) >= 10u || by_nc(sx, sy + 1) >= 10u;
+                    if ((pt == song.sel ? 7u : 0u) + lv * 10u / 11u > 0u) {   /* lit: the part's track colour in a mesh */
+                        uint32_t a = (pt == song.sel ? 7u : 0u) + lv * 9u / 11u;
+                        int32_t q;
+                        for (q = 0; q < 4; q++)
+                            if (BAYER_N[(Y + q / 2) & 3][(X + q % 2) & 3] < (a > 16u ? 16u : a))
+                                cv_pset(X + q % 2, Y + q / 2, NCOL[pt & 3u]);
+                    }
+                    if (e)
+                        cv_rect(X, Y, 2, 2, pt == song.sel ? NW : BY_TEAL);
+                    else if (by_nc(sx + 1, sy) != v || by_nc(sx, sy + 1) != v)
+                        cv_rect(X, Y, 2, 2, BY_DIM);
+                }
+        }
+        for (i = 0; i < NTRK; i++) {                    /* the tracks */
+            int32_t ry = 26 + (int32_t)i * 44, cells = shown[i] >> 8, j;
+            const char *role, *nm = rw_name(i, &role);
+            uint16_t tc = NCOL[i & 3u];
+            by_diam(14, ry + 10, 10, BY_GOLD, 1), by_diam(14, ry + 10, 7, BY_GOLD, 0);
+            b[0] = (char)('1' + i), b[1] = 0;
+            n_text(11, ry + 1, b, 1, track_empty(&trk[i]) ? BY_DIM : NW);
+            n_texto(30, ry - 4, nm, 1, track_empty(&trk[i]) ? BY_DIM : BY_TEAL);
+            for (j = 0; j < 14; j++) {                  /* the bar: slanted cells, pink to orange */
+                int32_t cx0 = 30 + j * 8, q;
+                uint16_t c = j < cells ? (j < 5 ? RGB(0xC8, 0x50, 0x8C) : j < 10 ? RGB(0xE6, 0x74, 0x6A) : RGB(0xF4, 0xA8, 0x5A)) : BY_DIM;
+                for (q = 0; q < 6; q++) {
+                    if (j < cells)
+                        cv_rect(cx0 + 5 - q, ry + 14 + q, 4, 1, c);
+                    else
+                        cv_pset(cx0 + 5 - q, ry + 14 + q, c), cv_pset(cx0 + 8 - q, ry + 14 + q, c);
+                }
+            }
+            {   /* its LEVEL, a thin row of cells under it (the drum track: its own level) */
+                int32_t lv = i == TRK_DRUM ? song.g[G_DRLVL] : trk[i].p[P_LEVEL];
+                n_knob(30, ry + 22, 112, 9, lv * 1000 / 127, BK_GROW, NW, tc);
+            }
+            by_diam(152, ry + 17, 7, m[i] ? NW : BY_DIM, 1);   /* how many, in its diamond */
+            fmt_int(b, (int32_t)(cells / 2));
+            n_text(149, ry + 9, b, 1, m[i] ? NW : BY_DIM);
+            if (i == song.sel) {                        /* the selected one: a line to its part of the ship */
+                int32_t ax = BY_ANCH[i & 3u][0], ay = BY_ANCH[i & 3u][1], yy;
+                for (x = 160; x <= 164; x++)
+                    cv_rect(x, ry + 16, 1, 3, tc);
+                for (yy = ry + 17 < ay ? ry + 17 : ay; yy <= (ry + 17 < ay ? ay : ry + 17); yy++)
+                    cv_rect(164, yy, 2, 1, tc);
+                for (x = 164; x <= ax; x++)
+                    cv_rect(x, ay, 1, 2, tc);
+                cv_rect(ax - 2, ay - 2, 5, 5, NW);
+            }
+            for (k = 0; k < 7u; k++)                    /* its lines to the effects it uses */
+                if ((m[i] >> k) & 1u) {
+                    int32_t lx = 162 + (int32_t)i * 7, ty = 29 + (int32_t)k * 17, yy;
+                    for (x = 160; x <= lx; x++)
+                        cv_pset(x, ry + 17, tc);
+                    for (yy = ry + 17 < ty ? ry + 17 : ty; yy <= (ry + 17 < ty ? ty : ry + 17); yy++)
+                        cv_pset(lx, yy, tc);
+                    for (x = lx; x < 196; x++)
+                        cv_pset(x, ty, tc);
+                }
+        }
+        n_texto(8, 206, "REC+FX CLEAR FX", 1, BY_GOLD);  /* the shortcuts */
+        n_texto(8, 222, "EDIT+OCT- UNDO", 1, BY_TEAL);
+        cv_oy = 0;
+        cv_blit(0, (uint32_t)y0);
+    }
+}
+static void n_wavs(void)
+{
+    n_screen(SCR_REC);
+    if (rw_view == 2u && !rw_show()) {                  /* HOME twice: the ship's FX bay */
+        n_bay();
+        return;
+    }
+    n_wavs_at(236, 232, 0);
 }
 
 /* ---------------------------------------------------------------- MENU --- */

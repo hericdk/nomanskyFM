@@ -447,6 +447,25 @@ WASM_EXPORT("emu_game_get") int32_t emu_game_get(uint32_t i)
     case 17: return (int32_t)g.ang;
     case 18: return (int32_t)g.zap_t;
     case 19: return (int32_t)fm1_ms;
+    case 30: case 31: case 32: {                        /* (tests) an NPC planet in this system: its x, y, radius */
+        planet_t p;
+        uint32_t k;
+        for (k = 0; k < G_NPL && g_planet(g_sector(g.sx >> 8), g_sector(g.sy >> 8), k, &p); k++)
+            if (g_npc_here(&p))
+                return i == 30 ? p.x : i == 31 ? p.y : G_PR(p);
+        return -9999;
+    }
+    case 33: return g.q_on | g.talk_t ? 1 : 0;
+    case 36: case 37: {                                 /* (tests) the nearest station: x, y */
+        int32_t a, b, x, y, sx = g_sector(g.sx >> 8), sy = g_sector(g.sy >> 8);
+        for (a = sx - 3; a <= sx + 3; a++)
+            for (b = sy - 3; b <= sy + 3; b++)
+                if (g_station(a, b, &x, &y))
+                    return i == 36 ? x : y;
+        return -9999;
+    }
+    case 34: return g.nx;
+    case 35: return g.ny;
     case 20: return g.facing;
     case 21: return g.px >> 8;
     case 22: return g.zx;
@@ -456,6 +475,7 @@ WASM_EXPORT("emu_game_get") int32_t emu_game_get(uint32_t i)
     case 26: return (int32_t)g.boom_t;
     case 27: return g.zres;
     case 28: { uint32_t k, n = 0; for (k = 0; k < 8u; k++) n += g.shot[k].t != 0; return (int32_t)n; }
+    case 29: return rc.lane;
     default: return 0;
     }
 }
@@ -477,6 +497,25 @@ WASM_EXPORT("emu_game_set") void emu_game_set(uint32_t i, int32_t v)
         for (k = 0; k < g.sen_n; k++)
             g.sen[k].x = g.px + ((g_cos(k * 205u) * 40) >> 7), g.sen[k].y = g.py + ((g_sin(k * 205u) * 40) >> 7), g.sen[k].hp = 3, g.sen[k].hit = 0;
     }
+    else if (i == 12u)                                  /* (tests) the race, on the planet you are on */
+        g_race_start();
+    else if (i == 13u) {                                /* (tests) the battle, now, in space (v: the boss too) */
+        uint32_t k;
+        (void)k;
+        g_set_mode(GM_SPACE), sf_start(v);
+    }
+    else if (i == 14u)                                  /* (tests) on foot: v px left of the NPC */
+        g.px = g.tx = (g.nx - v) << 8, g.py = g.ty = g.ny << 8;
+    else if (i == 18u)                                  /* (tests) pirates now: v of them */
+        sf_raid((uint32_t)v);
+    else if (i == 17u)                                  /* (tests) the space race, now */
+        rc_space = 1, g_race_start();
+    else if (i == 16u)                                  /* (tests) docked, here */
+        g.stx = g_sector(g.sx >> 8), g.sty = g_sector(g.sy >> 8), g.row = 4, g.pick = g.cls, g.thr = 0, g.vx = g.vy = 0, g_set_mode(GM_DOCK);
+    else if (i == 15u)                                  /* (tests) a passing ship now */
+        g.fr_t = fm1_ms;
+    else if (i == 11u)                                  /* (tests) unseen: no sentinel saw you, no one follows (a clean flight) */
+        g.sen_seen = 0, g.alert_t = 0, g.angry = 0, g.sen_n = 0, g.foe_n = 0;
 }
 WASM_EXPORT("emu_bpm") uint32_t emu_bpm(void) { return (uint32_t)song.g[G_BPM]; }
 /* (the video's composer) the selected track's sound in the PRESETS list (no favourites), a step of track t (synth: note |
@@ -504,7 +543,7 @@ WASM_EXPORT("emu_aim") int32_t emu_aim(uint32_t i)
     q.r = 0;
     for (a = sx - 2; a <= sx + 2; a++)
         for (b2 = sy - 2; b2 <= sy + 2; b2++)
-            for (k = 0; k < 3u && g_planet(a, b2, k, &p); k++) {
+            for (k = 0; k < G_NPL && g_planet(a, b2, k, &p); k++) {
                 int32_t d = (p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy);
                 if ((emu_aim_any || p.land == 3u || p.land == 5u || p.land == 6u) && d < best)
                     best = d, q = p;
@@ -521,5 +560,49 @@ WASM_EXPORT("emu_pl") int32_t emu_pl(int32_t sx, int32_t sy, uint32_t k, uint32_
         return -99999;
     return i == 0u ? p.x : i == 1u ? p.y : G_PR(p);
 }
+/* (tests, the videos) a track's LEVEL / REV send / DLY send set off camera (what = 0, 1, 2; the drum track: its own GLO values) */
+WASM_EXPORT("emu_tset") void emu_tset(uint32_t t, uint32_t what, int32_t v)
+{
+    static const uint8_t PI[3] = {P_LEVEL, P_REV, P_DLY}, GI[3] = {G_DRLVL, G_DRREV, G_DRDLY};
+    if (what > 2u)
+        return;
+    if (t % NTRK == TRK_DRUM)
+        song.g[GI[what]] = (int16_t)v;
+    else
+        trk[t % NTRK].p[PI[what]] = (int16_t)clamp(v, 0, 127);
+}
+WASM_EXPORT("emu_tget") int32_t emu_tget(uint32_t t, uint32_t what)
+{
+    static const uint8_t PI[3] = {P_LEVEL, P_REV, P_DLY}, GI[3] = {G_DRLVL, G_DRREV, G_DRDLY};
+    if (what > 2u)
+        return -1;
+    return t % NTRK == TRK_DRUM ? song.g[GI[what]] : trk[t % NTRK].p[PI[what]];
+}
 WASM_EXPORT("emu_lvl") int32_t emu_lvl(uint32_t t) { return trk[t % NTRK].p[P_LEVEL]; }   /* (a track's LEVEL, 1/2 dB steps) */
 WASM_EXPORT("emu_kit") uint32_t emu_kit(void) { return (uint32_t)TDRUM->p[P_E0]; }   /* the drum kit (DRUM_KIT_NAMES) */
+/* (tests) the recorded FX lane: step i (255: its length), the effect playing now, a project round trip (capture, clear,
+ * apply: 1 if the lane came back the same) */
+WASM_EXPORT("emu_fxl") int32_t emu_fxl(uint32_t i) { return i == 255u ? fxl_len : fxl[i % NSTEP]; }
+WASM_EXPORT("emu_punch") int32_t emu_punch(void) { return punch.req; }
+static project_t emu_proj;
+WASM_EXPORT("emu_fxl_roundtrip") int32_t emu_fxl_roundtrip(void)
+{
+    uint8_t keep[NSTEP], kl = fxl_len;
+    memcpy(keep, fxl, sizeof keep);
+    proj_capture(&emu_proj);
+    memset(fxl, 0, sizeof fxl), fxl_len = 0;
+    proj_apply(&emu_proj, 1);
+    return fxl_len == kl && !memcmp(keep, fxl, kl) && proj_ok(&emu_proj);
+}
+/* (tests) an old format 6 project (as 2.7 wrote it) loads: 1 when it converts and keeps the steps */
+static project_v6_t emu_v6;
+WASM_EXPORT("emu_v6_import") int32_t emu_v6_import(void)
+{
+    proj_capture(&emu_proj);
+    memcpy(&emu_v6, &emu_proj, sizeof emu_v6 - 4u);
+    emu_v6.magic = PROJ_MAGIC_V6, emu_v6.size = sizeof emu_v6, emu_v6.sum = proj_hash(&emu_v6, sizeof emu_v6 - 4u);
+    memset(&emu_proj, 0, sizeof emu_proj);
+    if (!proj_import(&emu_proj, &emu_v6, (int)sizeof emu_v6))
+        return 0;
+    return proj_ok(&emu_proj) && !memcmp(emu_proj.t, emu_v6.t, sizeof emu_v6.t) && emu_proj.fx_n == 0u;
+}

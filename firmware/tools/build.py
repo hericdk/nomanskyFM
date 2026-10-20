@@ -106,6 +106,8 @@ def generate():
             [tools / "gen_nave.py", GEN / "nms_nave.h"],
             [tools / "gen_decolagem.py", GEN / "nms_decolagem.h"],
             [tools / "gen_nave_cima.py", GEN / "nms_nave_cima.h"],
+            [tools / "gen_nave_batalha.py", GEN / "nms_nave_batalha.h"],
+            [tools / "gen_nave_decola.py", GEN / "nms_nave_decola.h"],
             [tools / "gen_anao.py", GEN / "nms_anao.h"],
             [tools / "gen_nebulosa.py", GEN / "nms_nebulosa.h"],
             [tools / "gen_nave_lado.py", GEN / "nms_nave_lado.h"],

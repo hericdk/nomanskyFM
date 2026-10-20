@@ -449,11 +449,16 @@ static struct {
     int8_t micro[NSTEP];                                 /* (2.7) the nudges too (REC QUANT OFF writes them) */
 } undo;
 static uint32_t undo_sess = 1;           /* UI sessions (seq.c: recording passes use the track's pass) */
+/* (No Man Sky FM) REC + FX: the track's effects back to their defaults; EDIT + OCT- (the next undo) brings them back */
+static const uint8_t FXR_ID[14] = {P_DIST, P_CHOR, P_DLY, P_REV, P_TFLT, P_SLCR, P_SLPAT, P_SLRATE, P_SLDEPTH,
+                                   P_ITYPE, P_IA, P_IB, P_IC, P_IMIX};
+static struct { uint8_t valid, trk; int16_t v[14], g[2]; } fx_undo;
 static void undo_mark(const track_t *t, uint32_t sess)
 {
     uint32_t i = trk_index(t);
     if (undo.valid && !undo.undone && undo.trk == i && undo.sess == sess)
         return;                                          /* (this session is marked already) */
+    fx_undo.valid = 0;                                   /* (a newer change: the undo is its) */
     memcpy(undo.st, t->step, sizeof undo.st);
     memcpy(undo.micro, t->micro, sizeof undo.micro);
     undo.len = t->p[P_SLEN];
@@ -463,6 +468,42 @@ static void undo_mark(const track_t *t, uint32_t sess)
     undo.undone = 0;
 }
 #define UNDO_REC(t) (((t)->pass << 2) | 1u)      /* a recording pass of track t */
+static const param_desc_t *track_desc(const track_t *t, uint32_t id);
+/* (No Man Sky FM) the punch-in FX recorded: a lane of the loop, a byte a 1/16 step (0 none, else the effect + 1),
+ * fxl_len long (the longest pattern when recorded). REC with an effect held writes it where the clock is; playing,
+ * the lane sets the effect while no key holds one. A free take keeps its changes in time and lays them on the loop it
+ * closes. Saved in the project as up to 11 changes (project.c format 7); REC + FX clears it (fxl_block) */
+#define FXL_EV 11u
+static uint8_t fxl[NSTEP], fxl_len, fxl_owns;
+static int8_t fxl_cur = -1;
+static void fx_reset(track_t *t)
+{
+    uint32_t k;
+    memset(fxl, 0, sizeof fxl), fxl_len = 0;
+    fx_undo.trk = (uint8_t)trk_index(t), fx_undo.valid = 1;
+    fx_undo.g[0] = song.g[G_DRREV], fx_undo.g[1] = song.g[G_DRDLY];
+    for (k = 0; k < 14u; k++) {
+        const param_desc_t *d = track_desc(t, FXR_ID[k]);
+        fx_undo.v[k] = t->p[FXR_ID[k]];
+        if (d)
+            t->p[FXR_ID[k]] = d->def;
+    }
+    if (is_drum(t))
+        song.g[G_DRREV] = GP[G_DRREV].def, song.g[G_DRDLY] = GP[G_DRDLY].def;
+}
+static int fx_unreset(void)                              /* (EDIT + OCT-, before the steps' undo) */
+{
+    uint32_t k;
+    track_t *t = &trk[fx_undo.trk % NTRK];
+    if (!fx_undo.valid)
+        return 0;
+    for (k = 0; k < 14u; k++)
+        t->p[FXR_ID[k]] = fx_undo.v[k];
+    if (is_drum(t))
+        song.g[G_DRREV] = fx_undo.g[0], song.g[G_DRDLY] = fx_undo.g[1];
+    fx_undo.valid = 0;
+    return 1;
+}
 static uint32_t undo_erase_sess;
 
 /* ------------------------------------------------------- recording --- */
@@ -969,12 +1010,16 @@ static uint32_t ft_fit(uint32_t T, uint32_t *bpm)
     return best;
 }
 
+static struct { uint16_t t; int8_t v; } ftfx[16];  /* (a free take's FX changes: when, which; -1 none) */
+static uint8_t ftfx_n;
+static int8_t ftfx_last = -1;
 static void ft_start(track_t *t)
 {
     ft_on = 1;
     ft_trk = (uint8_t)trk_index(t);
     ft_t = 0;
     ft_n = 0;
+    ftfx_n = 0, ftfx_last = -1;
     rec_wait = 0;
 }
 
@@ -1047,6 +1092,16 @@ static void ft_close(void)
                 s->time = ST_TIE;
             }
         }
+    if (ftfx_n) {                                     /* (the FX played in it: on the loop's 1/16 steps) */
+        int32_t v = -1;
+        memset(fxl, 0, sizeof fxl), fxl_len = (uint8_t)len, k = 0;
+        for (i = 0; i < len; i++) {
+            uint32_t at = (i * T * 2u + T / len) / (2u * len) ;
+            while (k < ftfx_n && ftfx[k].t <= at)
+                v = ftfx[k++].v;
+            fxl[i] = (uint8_t)(v >= 0 ? v + 1 : 0);
+        }
+    }
     t->seq_active = 1;
     song.g[G_BPM] = (int16_t)bpm;
     ft_bars = (uint8_t)bars;
@@ -1283,13 +1338,18 @@ static uint32_t arp_pick(track_t *t, uint32_t *list, uint32_t len)
 static void arp_end(track_t *t)
 {
     uint32_t i;
+    int ft = ft_on && t == &trk[ft_trk % NTRK];
     for (i = 0; i < 3u; i++)
         if (t->arp_ch[i]) {
             trk_note_off(t, t->arp_ch[i]);
             seq_out_off(t, t->arp_ch[i]);
+            if (ft)
+                ft_note_off(t->arp_ch[i]);
             t->arp_ch[i] = 0;
         }
     if (t->arp_note) {
+        if (ft)
+            ft_note_off(t->arp_note);
         trk_note_off(t, t->arp_note);
         seq_out_off(t, t->arp_note);
         t->arp_note = 0;
@@ -1303,6 +1363,8 @@ static void arp_play(track_t *t, uint32_t n)
     seq_out_on(t, n, 100);
     if (((song.rec >> trk_index(t)) & 1u) && song.playing)
         rec_note(t, n, 100, 0, 0);
+    if (ft_on && t == &trk[ft_trk % NTRK])          /* (the user) a free take too: each note the arp plays, its length */
+        ft_note_on(n, 100);
 }
 
 /* an arp step: the next note of the list by MODE, or (CHORD) the first 4 notes together, OCT octaves in turn. 1: it
@@ -1504,7 +1566,7 @@ static void input_on(track_t *t, uint32_t note, uint32_t vel)
             return;                               /* (already held, in this chord: it sounds) */
         kh_set[ti][(note >> 5) & 3u] |= 1u << (note & 31u);
     }
-    if (ft_on && t == &trk[ft_trk % NTRK])
+    if (ft_on && t == &trk[ft_trk % NTRK] && !t->p[P_AMODE])   /* (ARP on: the take gets the arp's notes, arp_play) */
         ft_note_on(note, vel);
     if (t->p[P_AMODE]) {
         arp_add(t, note);                         /* (the arp records the notes it plays) */
@@ -1658,6 +1720,49 @@ static void roll_end(uint32_t r)
     roll[r].on = 0;
 }
 
+static uint32_t fxl_loop(void)                      /* the longest pattern: the lane's length when recorded */
+{
+    uint32_t i, L = 1;
+    for (i = 0; i < NTRK; i++)
+        if (trk_len(&trk[i]) > L)
+            L = trk_len(&trk[i]);
+    return L > NSTEP ? NSTEP : L;
+}
+static void fxl_block(void)
+{
+    uint32_t into, slen, abs, idx;
+    int32_t live;
+    if (fxl_owns && punch.req != fxl_cur)              /* a key (or MIDI) took the effect over */
+        fxl_owns = 0;
+    live = fxl_owns ? -1 : punch.req;
+    if (ft_on) {                                       /* a free take: its changes, in time */
+        if (live != ftfx_last && ftfx_n < 16u)
+            ftfx[ftfx_n].t = (uint16_t)ft_t, ftfx[ftfx_n++].v = (int8_t)live, ftfx_last = (int8_t)live;
+        return;
+    }
+    if (!song.playing) {
+        if (fxl_owns)
+            punch.req = -1, fxl_owns = 0, fxl_cur = -1;
+        return;
+    }
+    abs = grid_den(4u, 0u, &into, &slen);
+    if (song.rec && live >= 0) {                       /* recording, an effect held: into the lane */
+        uint32_t L = fxl_loop();
+        if (fxl_len != L)
+            fxl_len = (uint8_t)L;
+        fxl[abs % fxl_len] = (uint8_t)(live + 1);
+        return;
+    }
+    if (live >= 0 || !fxl_len)
+        return;
+    idx = abs % fxl_len;
+    if (fxl[idx]) {
+        if (!fxl_owns || fxl_cur != (int8_t)(fxl[idx] - 1u))
+            punch.req = fxl_cur = (int8_t)(fxl[idx] - 1u), fxl_owns = 1;
+    } else if (fxl_owns) {
+        punch.req = -1, fxl_owns = 0, fxl_cur = -1;
+    }
+}
 static void roll_block(uint32_t adv)
 {
     uint32_t r, den = roll_den(), u = BEAT_U / den, into, slen;
@@ -3060,6 +3165,7 @@ static void events_block(uint32_t n)
         seq_tick(&trk[i], adv);
     click_tick();
     roll_block(adv);
+    fxl_block();
     for (i = 0; i < NPART; i++)
         arp_tick(&trk[i], adv);
     if (song.playing) {
