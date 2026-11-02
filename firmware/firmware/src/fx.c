@@ -47,7 +47,8 @@ static void track_dist(track_t *t, int32_t *b, uint32_t n)
         int32_t x = b[i], y;
         t->dist_hp += (x - t->dist_hp + 64) >> 7;           /* ~55 Hz low cut: keep the bass out of the clipper */
         x = clamp(x - t->dist_hp, -230000, 230000);         /* (x >> 2) * g fits 32 bits; the clip is flat out there */
-        y = softclip((((x >> 2) * g) >> 10) + bias) - b0;   /* >> 2 first: no overflow for loud poly */
+        y = softclip(MULQ12R(x, g, 2) + bias) - b0;         /* (as (x >> 2) * g >> 10 in 32 bits: no overflow for loud
+                                                             * poly; #4: rounded, no step of 4 x the drive) */
         t->dist_lp1 += mulq15(y - t->dist_lp1, k);         /* two poles: tames the fizz */
         t->dist_lp2 += mulq15(t->dist_lp1 - t->dist_lp2, k);
         b[i] = mulq15(t->dist_lp2, mk);
@@ -117,6 +118,8 @@ static void lim_block(lim_t *s, int32_t *l, int32_t *r, uint32_t n)
     s->w = w;
 }
 static volatile uint8_t fx_lowcut;     /* settings: 12 dB/oct ~110 Hz for the small speaker */
+static uint8_t flt_reso;               /* (2.7.2) menu AUDIO > FILTER RESO: 0..10, the track filter's resonance (fx.c
+                                        * tflt_reso); 0 = the clean filter as before. One setting for every track's filter */
 static int32_t lc_l1, lc_l2, lc_r1, lc_r2, dc_l, dc_r, dce_l, dce_r;
 
 /* DC blocker (~2 Hz), always on: a leaky integrator of the input (Q6 state) subtracted from it.
@@ -364,8 +367,12 @@ typedef struct {
 } djf_t;
 static djf_t djf, tflt[NTRK];
 
-/* the knob v -> this block's coefficients in *c; 0 = bypassed (nothing to do) */
-static int djf_block(djf_t *f, int32_t v, tsvf_t *c)
+/* (2.7.2) the track filter's SVF resonance (tsvf_coef's reso) for the FILTER RESO setting: 40 (clean, as the filter
+ * always was) at 0, up to 110 at 10 (a strong but still stable peak; tflt_run leaves 4x headroom for it). The master
+ * DJ filter (G_FILT) and the tape TONE keep the fixed 40. */
+static int32_t tflt_reso(void) { return 40 + (int32_t)(flt_reso > 10u ? 10u : flt_reso) * 7; }
+/* the knob v -> this block's coefficients in *c; 0 = bypassed (nothing to do). reso: tsvf_coef's resonance */
+static int djf_block(djf_t *f, int32_t v, tsvf_t *c, int32_t reso)
 {
     int32_t to;
     if (v < 0 && f->mode >= 0) {                        /* (switching side: from open) */
@@ -387,7 +394,7 @@ static int djf_block(djf_t *f, int32_t v, tsvf_t *c)
         f->mode = 0;                                    /* fully open again: off */
         return 0;
     }
-    tsvf_coef(c, f->cut, 40);
+    tsvf_coef(c, f->cut, reso);
     return 1;
 }
 /* n samples of channel ch through the filter (x within +-140000) */
@@ -680,7 +687,7 @@ static void mix_part_run(track_t *t, uint32_t n, mixacc_t *mx, int32_t *b)
         return;
     }
     {
-        int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] ? clamp(t->p[P_LEVEL] + t->p[P_ED_FX], 1, 127) : 0], pan = t->p[P_PAN];   /* (+ the sound's trim: 1/2 dB steps, as LEVEL's) */
+        int32_t lvl = expr_gain(LEVEL_Q12[t->p[P_LEVEL] ? clamp(t->p[P_LEVEL] + t->p[P_ED_FX], 1, 127) : 0], (uint32_t)(t - trk)), pan = t->p[P_PAN];   /* (+ the sound's trim: 1/2 dB steps, as LEVEL's) */
         int32_t gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
         int32_t c = t->p[P_CHOR] * 258, d = send_thr(t->p[P_DLY] * 258, thr_dly), r = send_thr(t->p[P_REV] * 258, thr_rev);
         int32_t pk = t->peak;
@@ -697,7 +704,7 @@ static void mix_part_run(track_t *t, uint32_t n, mixacc_t *mx, int32_t *b)
         {
             tsvf_t fc;                                  /* the track's FILTER (P_TFLT), after the SLICER */
             djf_t *f = &tflt[(uint32_t)(t - trk) % NTRK];
-            if (djf_block(f, t->p[P_TFLT], &fc))
+            if (djf_block(f, t->p[P_TFLT], &fc, tflt_reso()))
                 tflt_run(f, &fc, b, n, 0);
         }
         int32_t lvl0, dl, gl0, dgl, gr0, dgr;          /* (2.7) LEVEL (and a new sound's trim) and PAN glide (drums.c
@@ -708,10 +715,13 @@ static void mix_part_run(track_t *t, uint32_t n, mixacc_t *mx, int32_t *b)
         t->lvl = mix_glide(lvl0, lvl), t->gpl = mix_glide(gl0, gl), t->gpr = mix_glide(gr0, gr);
         dl = (t->lvl - lvl0) >> CTL_LOG2, dgl = t->gpl - gl0, dgr = t->gpr - gr0;
         for (i = 0; i < n; i++) {
-            int32_t x = ((b[i] >> 2) * (lvl0 + dl * (int32_t)i)) >> 10, a;   /* pre-shift: 8 loud voices */
+            int32_t lv = lvl0 + dl * (int32_t)i, bi = b[i], x = MULQ12R(bi, lv, 2), a;   /* (#4) rounded, all of b: 8 loud
+                                                         * voices in 32 bits as ((b >> 2) * lv) >> 10 was */
             int32_t xs, g = ga + (((gb - ga) * (int32_t)i) >> CTL_LOG2);
-            if (g < 32767)
-                x = (x >> 4) * (g >> 3) >> 8;           /* (Q15 in two halves: no 32-bit overflow) */
+            if (g < 32767) {                            /* (always, at rest: mulq15(32767, 32767) is 32766) */
+                g >>= 3;                                /* (Q12: no 32-bit overflow) */
+                x = MULQ12R(x, g, 4);
+            }
             a = x < 0 ? -x : x;
             xs = clamp(x, -xmax, xmax);                 /* sends: mulq15 would overflow */
             if (a > pk)
@@ -723,8 +733,9 @@ static void mix_part_run(track_t *t, uint32_t n, mixacc_t *mx, int32_t *b)
             if (r)
                 mx->sr[i] += mulq15(xs, r);
             gl = gl0 + ((dgl * (int32_t)i) >> CTL_LOG2), gr = gr0 + ((dgr * (int32_t)i) >> CTL_LOG2);   /* (2.7) */
-            mx->l[i] += ((x >> 4) * gl) >> 8;           /* (x may pass 2^19: >> 4 first) */
-            mx->r[i] += ((x >> 4) * gr) >> 8;
+            mx->l[i] += (x * (gl >> 4) + 128) >> 8;     /* (x may pass 2^19: PAN's Q12 to Q8, exact at rest: 64 a step;
+                                                         * #4: x >> 4 floored the part to 16 LSB) */
+            mx->r[i] += (x * (gr >> 4) + 128) >> 8;
         }
         t->peak = pk;
     }
@@ -791,7 +802,7 @@ static void dust_process(int32_t *l, int32_t *r, uint32_t n)
 static void djf_process(int32_t *l, int32_t *r, uint32_t n)
 {
     tsvf_t c;
-    if (!djf_block(&djf, song.g[G_FILT], &c))
+    if (!djf_block(&djf, song.g[G_FILT], &c, 40))
         return;
     djf_run(&djf, &c, l, n, 0);
     djf_run(&djf, &c, r, n, 1);
@@ -833,7 +844,7 @@ static void mix_drums(uint32_t n, mixacc_t *mx)
     int flt;
     drums.a0 = TDRUM->att;                              /* the drum track's mute / solo fade */
     drums.a1 = 32767 - gain_next(TDRUM);
-    flt = n <= CTL && djf_block(f, TDRUM->p[P_TFLT], &fc);   /* the drum track's FILTER */
+    flt = n <= CTL && djf_block(f, TDRUM->p[P_TFLT], &fc, tflt_reso());   /* the drum track's FILTER */
     if (flt || (n <= CTL && (TDRUM->p[P_ITYPE] | TDRUM->ins_run))) {   /* .. or its INSERT: left, right, the sends */
         int32_t *dl = drum_buf[0], *dr = drum_buf[1], *dv = drum_buf[2], *dd = drum_buf[3];
         for (i = 0; i < n; i++)
@@ -1148,7 +1159,7 @@ static void texture_mix(int32_t *l, int32_t *r, uint32_t n)
         tx.lpm[1] += ((((tr[i] * sc) >> 8) - tx.lpm[1]) >> 2) * (k0 >> 2) >> 11;
         tl[i] = tx.lpm[0], tr[i] = tx.lpm[1];
     }
-    if (djf_block(&tx.f, clamp(song.g[G_TXTONE], -64, 63), &fc)) {
+    if (djf_block(&tx.f, clamp(song.g[G_TXTONE], -64, 63), &fc, 40)) {
         djf_run(&tx.f, &fc, tl, n, 0);
         djf_run(&tx.f, &fc, tr, n, 1);
     }
@@ -1225,15 +1236,15 @@ static void mix_block(int32_t *out, uint32_t n)
         static uint8_t usb_was;
         for (i = 0; i < n; i++) {
             int32_t m = m0 + (((m1 - m0) * (int32_t)i) >> CTL_LOG2);
-            ol[i] = ((mix_l[i] >> 2) * m) >> 10;
-            orr[i] = ((mix_r[i] >> 2) * m) >> 10;
+            ol[i] = MULQ12R(mix_l[i], m, 2);           /* (#4: rounded; (x >> 2) * m >> 10 floored to 4 LSB) */
+            orr[i] = MULQ12R(mix_r[i], m, 2);
             master_pre(&ol[i], &orr[i]);
             if ((i & 1u)) {                             /* the visualiser: every other sample, as audio.c reads it */
                 vis_tap[2u * i] = (int16_t)knee(mix_l[i]);
                 vis_tap[2u * i + 1u] = (int16_t)knee(mix_r[i]);
             }
             if (usb_full_now) {                         /* USB AUDIO = FULL: MASTER all the way up (4096) */
-                ul[i] = (mix_l[i] >> 2) << 2, ur[i] = (mix_r[i] >> 2) << 2;
+                ul[i] = mix_l[i], ur[i] = mix_r[i];     /* (#4: x 4096 / 4096, every bit; it was floored to 4 LSB) */
                 master_pre_usb(&ul[i], &ur[i]);
             }
         }

@@ -67,6 +67,7 @@
 #include "ui_menu.c"
 #include "ui_nms.c"          /* No Man Sky FM: every screen, black and white, numbers and bars */
 #include "ui_game.c"         /* the game on HOME (after Low Mem Sky) */
+#include "ui_cd.c"           /* the sound changed: the CDs (after winampFM's tapes) */
 #include "ui_input.c"
 #ifndef FELUCCA_FLASH
 #define FELUCCA_FLASH 1          /* flash driver + storage.c */

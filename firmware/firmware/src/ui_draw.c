@@ -36,11 +36,15 @@ static void ui_timers(void)
 
 static void g_step(void);                               /* ui_game.c: the game a frame on, its scene under a band */
 static void g_backdrop(int32_t y, int32_t h);
+static int cd_on(void);                                 /* ui_cd.c: the sound changed, the CDs */
+static int g_snap_roll(void);
+static void n_cd(void);
 static void ui_draw(void)
 {
     ui.frame++;
     cv_keyreq = 0;
     pads_tick();
+    party_tick();                                       /* (FX > PARTY: who is on stage) */
     vz_tick();
     rw_tick();                                          /* (each track's sound over its loop: the REC windows) */
     if (g_home_single())                                /* HOME tapped once on the game: the tracks' WAVs, open / closed */
@@ -58,11 +62,19 @@ static void ui_draw(void)
             ui_message(m);
         }
     }
+    if (cd_on() && !ui.menu && !ui.hold_kind && ui.layer == LY_PLAY && !rec_wait && !ft_on) {
+        n_cd();                                         /* the sound changed: the CDs over everything, then back */
+        ui_timers();
+        ui.force = 0;
+        return;
+    }
     if (ui.menu || ui.hold_kind || ui.layer != LY_PLAY || rec_wait || ft_on || rw_show() || rw_view_on() || !(ui.home || cur_page()->scope == SC_TRK)) {
         /* No Man Sky FM: every screen but the game's own shows the game behind it (gfx.c cv_keyreq, a 40 % mesh), and
          * whatever its bands leave gets the game too (cv_fill_gaps): no black backgrounds */
         g_step();
-        cv_backdrop = g_backdrop, cv_keyreq = 1, ui.force = 1;
+        if (g_snap_roll())                              /* (the game behind: a small copy, a band now and then) */
+            ui.force = 1;                               /* (else only what changed goes to the LCD: its SPI is the slow part) */
+        cv_backdrop = g_backdrop, cv_keyreq = 1;
     }
     if (!ui.menu && ui.hold_kind)                       /* REC / SAVE held to confirm */
         n_hold();
@@ -80,8 +92,12 @@ static void ui_draw(void)
         cursor_fix();
         n_page();
     }
-    if (cv_keyreq)
-        cv_fill_gaps();                                 /* (over the game: nothing left black) */
+    if (cv_keyreq) {
+        if (ui.force)
+            cv_fill_gaps();                             /* (over the game: nothing left black) */
+        else
+            cv_cov_clear();
+    }
     ui_timers();
     ui.force = 0;
 }

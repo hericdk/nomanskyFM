@@ -186,7 +186,7 @@ static inline uint16_t swap16(uint32_t c) { return (uint16_t)(((c >> 8) & 0xFFu)
  * black is filled with CV_KEY instead; at its blit cv_backdrop paints the game's scene under it (cv_under: a pixel
  * is written only where the key still is, and not on 8 of each 16 of a Bayer mesh: those stay black, the 50 % mesh) */
 #define CV_KEY 0x0821u
-#define CV_MESH 10u                                        /* (10 of 16 black: the user wanted it darker, the words read) */
+#define CV_MESH 10u                                        /* (10 of 16 black: dark enough for the words to read) */
 #define CV_DIM(c) ((uint16_t)(((c) >> 1) & 0x7BEFu))         /* (the game under a screen: at half its light) */
 static uint8_t cv_keyreq, cv_keyed, cv_under;
 static uint32_t cv_ytop, cv_xleft;                          /* (where the band goes on the screen, for the mesh) */
@@ -272,6 +272,12 @@ static void cv_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
 }
 
 /* the end of a frame over the game: what no band covered gets the game's scene too (no black left) */
+static void cv_cov_clear(void)
+{
+    uint32_t r;
+    for (r = 0; r < 240u; r++)
+        cv_cov[r] = 0;
+}
 static void cv_fill_gaps(void)
 {
     uint32_t r = 0;
@@ -290,8 +296,7 @@ static void cv_fill_gaps(void)
         }
         r = r2;
     }
-    for (r = 0; r < 240u; r++)
-        cv_cov[r] = 0;
+    cv_cov_clear();
 }
 
 static void cv_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)

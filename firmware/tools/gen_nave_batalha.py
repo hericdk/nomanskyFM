@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""No Man Sky FM: the ship from above in the battle (the user's sprite) -> build/gen/nms_nave_batalha.h
+"""No Man Sky FM: the ship from above in the battle (the sprite) -> build/gen/nms_nave_batalha.h
   assets/nave-batalha.png (nose up, transparent round it), kept at its own size and its own colours: up to 15, a palette
   of its own (RGB565), a nibble a pixel (15: none)."""
 import sys

@@ -76,7 +76,7 @@ static int32_t g_vnoise(int32_t x, int32_t y, uint32_t seed, uint32_t sh, int32_
 
 static const uint8_t BAYER[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
 
-enum { GM_INTRO, GM_SPACE, GM_LAND, GM_SURF, GM_TAKEOFF, GM_MAP, GM_WARP, GM_DOCK, GM_BATTLE, GM_RACE };
+enum { GM_INTRO, GM_SPACE, GM_LAND, GM_SURF, GM_TAKEOFF, GM_MAP, GM_WARP, GM_DOCK, GM_BATTLE, GM_RACE, GM_FLY };
 #define G_NPART 40u
 #define G_NGOT 48u
 #define G_NSEN 5u                                       /* (5 on the hostile planets) */
@@ -111,11 +111,11 @@ static struct {
     uint8_t mz;                                         /* the map's zoom (KNOB 3 on the map) */
     uint8_t space_z;                                    /* the zoom you had in space, back after a take-off */
     uint8_t own, eng, wpn, pick;
-    uint8_t q_on, q_k, q_n, q_pk;                       /* (the user) a quest: taken, the resource, how many, where */
+    uint8_t q_on, q_k, q_n, q_pk;                       /* a quest: taken, the resource, how many, where */
     int16_t q_sx, q_sy, nx, ny;                         /* .. its planet's sector; the NPC's place on this planet */
-    uint8_t fr_ev;                                      /* (the user) the passing ship hailed (OCT+): its event, 1..3 */
+    uint8_t fr_ev;                                      /* the passing ship hailed (OCT+): its event, 1..3 */
     uint32_t fr_e0;                                     /* .. since */
-    uint32_t q_done, talk_t, fr_t;                      /* (quests done: a bit a planet); talking since; a passing ship */                        /* (the user) ships owned (bit a class), engine and weapon levels,
+    uint32_t q_done, talk_t, fr_t;                      /* (quests done: a bit a planet); talking since; a passing ship */                        /* ships owned (bit a class), engine and weapon levels,
                                                          * the ship shown in the station */
     int16_t zc;                                         /* KNOB 3 turned down past the widest: the charge (256: the system view) */
     uint32_t zc_t, zin_t;                               /* .. last turned; the system view entered */
@@ -159,8 +159,8 @@ static int32_t g_cargo(void) { return g.res[0] + g.res[1] + g.res[2] + g.res[3];
 
 static int32_t gz = 3, gw = 80, gh = 80;                /* the logical pixel and the view, in logical px */
 static int32_t gcx, gcy;                                /* the camera: world px at the view's centre */
-static uint8_t rc_space;                                /* (the user) the race is out in space (a gate by a station) */
-static int32_t gcr = 32767, gsr = 0;                    /* (the user) the camera's turn, cos / sin Q15 (0: north up) */
+static uint8_t rc_space;                                /* the race came from space (the race ship): back there after */
+static int32_t gcr = 32767, gsr = 0;                    /* the camera's turn, cos / sin Q15 (0: north up) */
 static void g_rotv(int32_t *dx, int32_t *dy)            /* a vector (world px) turned with the view */
 {
     int32_t x = *dx, y = *dy;
@@ -225,7 +225,7 @@ static void g_sun_at(int32_t sx, int32_t sy, int32_t *x, int32_t *y)
     if (sx == 0 && sy == 0)
         *x = G_HOME - 150, *y = G_HOME + 130;
 }
-/* (the user: suns of every colour) a star's kind: its body, its dark spots, its glow */
+/* (suns of every colour) a star's kind: its body, its dark spots, its glow */
 static const uint16_t G_SUN[8][3] = {
     {RGB(0xF0, 0x78, 0x20), RGB(0xA8, 0x30, 0x10), RGB(0xF8, 0xE4, 0x50)},   /* orange */
     {RGB(0xF8, 0xD0, 0x30), RGB(0xD0, 0x70, 0x18), RGB(0xF8, 0xF4, 0xA8)},   /* yellow */
@@ -280,14 +280,13 @@ static void g_sun_draw(int32_t x, int32_t y, int32_t r, uint32_t kind, int32_t y
         }
     }
 }
-static int g_race_here(const planet_t *p) { return (p->seed >> 13) % 4u == 0u; }   /* (the race) a quarter of the planets */
 static int g_npc_here(const planet_t *p);
 static uint32_t g_npc_bit(const planet_t *p);
 static int g_npc_quest(int32_t sx, int32_t sy, uint32_t k);
 static void g_npc_icon(int32_t x, int32_t y, int ask);
 static int g_planet(int32_t sx, int32_t sy, uint32_t k, planet_t *p)   /* planet k of sector (sx, sy); 0 = none */
 {
-    uint32_t h = g_hash(sx, sy, 0x51u + k), n = (sx == 0 && sy == 0) ? 2u : (sx == G_CX && sy == G_CY) ? 0u : 2u + g_hash(sx, sy, 0x50u) % 3u;   /* (the user: more: 2..4) */
+    uint32_t h = g_hash(sx, sy, 0x51u + k), n = (sx == 0 && sy == 0) ? 2u : (sx == G_CX && sy == G_CY) ? 0u : 2u + g_hash(sx, sy, 0x50u) % 3u;   /* (more: 2..4) */
     if (k >= n)
         return 0;
     p->r = 7 + (int32_t)(h % 13u);
@@ -297,13 +296,13 @@ static int g_planet(int32_t sx, int32_t sy, uint32_t k, planet_t *p)   /* planet
         p->x = G_HOME + 80, p->y = G_HOME - 50, p->r = 14;   /* (its edge 52 px off: in sight, not pulling) */
     if (sx == 0 && sy == 0 && k == 1)                    /* (the second: never on top of it) */
         p->y = p->y < G_HOME ? p->y - 120 : p->y + 120;
-    {   /* (the user) round its system's sun, apart (its own ring each), never on it; still: no orbiting */
+    {   /* round its system's sun, apart (its own ring each), never on it; still: no orbiting */
         int32_t cx, cy, dx, dy, rr;
         g_sun_at(sx, sy, &cx, &cy);
         dx = p->x - cx, dy = p->y - cy, rr = g_isqrt(dx * dx + dy * dy);
         if (sx || sy) {                                 /* (each its own orbit, apart: 64, 114, 164, 214 px and a little) */
             uint32_t a0 = (h >> 8) & 1023u;
-            rr = 90 + (int32_t)k * 78 + (int32_t)((h >> 3) % 16u);   /* (the user: further apart) */
+            rr = 90 + (int32_t)k * 78 + (int32_t)((h >> 3) % 16u);   /* (further apart) */
             dx = (g_cos(a0) * rr) >> 15, dy = (g_sin(a0) * rr) >> 15;
         }
         if (rr < 60)
@@ -311,7 +310,7 @@ static int g_planet(int32_t sx, int32_t sy, uint32_t k, planet_t *p)   /* planet
         p->x = cx + dx, p->y = cy + dy;
     }
     p->seed = h | 1u;
-    {   /* (the user: more colours) seas: blue, purple, deep blue, green, red, orange (deep blue below); the land any
+    {   /* (more colours) seas: blue, purple, deep blue, green, red, orange (deep blue below); the land any
          * colour but the sea's; the hills a third one; a ring in a colour of its own */
         static const uint8_t SEA[8] = {0, 0, 2, 7, 1, 5, 3, 2};
         uint32_t h2 = g_hash(sx, sy, 0x7C01u + k);
@@ -417,7 +416,7 @@ static void g_ring(int32_t cx, int32_t cy, int32_t r, int front, uint16_t c, uin
 
 static void g_planet_draw(const planet_t *p, int32_t sxv, int32_t syv, int32_t r, int32_t y0, int32_t y1)
 {
-    uint32_t rot = fm1_ms / 70u + (p->seed & 255u);   /* (the user: slower, a third of before) */
+    uint32_t rot = fm1_ms / 70u + (p->seed & 255u);   /* (slower, a third of before) */
     if (p->ring)
         g_ring(sxv, syv, r, 0, GCOL[(p->ring - 1u) & 7u], p->seed);
     g_globe(sxv, syv, r, p, rot, y0, y1);
@@ -443,7 +442,7 @@ static int g_station(int32_t sx, int32_t sy, int32_t *x, int32_t *y)
 static int32_t g_price(int32_t sx, int32_t sy, uint32_t k) { return 2 + (int32_t)((g_hash(sx, sy, 0x5717u) >> (k * 5u)) % 7u); }
 
 /* a station at view (x, y): a ring that turns, four spokes, the hub, the dock's light blinking */
-static void g_station_draw(int32_t x, int32_t y)       /* (the user) big, as if close: a turning ring on four spokes,
+static void g_station_draw(int32_t x, int32_t y)       /* big, as if close: a turning ring on four spokes,
                                                          * panels out to the sides, the hub with its bay, lights blinking */
 {
     uint32_t rot = fm1_ms / 30u, a;
@@ -472,27 +471,6 @@ static void g_station_draw(int32_t x, int32_t y)       /* (the user) big, as if 
         gp(x + ((g_cos(rot + 128u) * 21) >> 15), y + ((g_sin(rot + 128u) * 21) >> 15), NO);
 }
 
-/* (the user) a race gate: by one station in two, 70 px east of it; a chequered hoop, lights running round it */
-static int g_station(int32_t a, int32_t b, int32_t *x, int32_t *y);
-static int g_gate_at(int32_t a, int32_t b, int32_t *x, int32_t *y)
-{
-    if (!g_station(a, b, x, y) || (g_hash(a, b, 0x6A7Eu) & 1u))
-        return 0;
-    *x += 70;
-    return 1;
-}
-static void g_gate_draw(int32_t x, int32_t y)
-{
-    uint32_t a, run = fm1_ms / 20u;
-    for (a = 0; a < 1024u; a += 8u) {
-        int32_t px = x + ((g_cos(a) * 10) >> 15), py = y + ((g_sin(a) * 15) >> 15);
-        gp(px, py, ((a / 64u) & 1u) ? NW : NK), gp(px + 1, py, ((a / 64u) & 1u) ? NK : NW);
-        if (((a + run) & 127u) < 8u)
-            gp(x + ((g_cos(a) * 8) >> 15), y + ((g_sin(a) * 13) >> 15), NO);
-    }
-    if ((fm1_ms / 400u) & 1u)
-        gp(x, y - 18, EG);
-}
 /* a station's icon (the map, the radar, the edge of the screen): a yellow diamond ring, its four arms, a white hub;
  * pset: the map's pixel or the game's */
 static void g_st_icon(int32_t x, int32_t y, void (*pset)(int32_t, int32_t, uint16_t))
@@ -549,7 +527,7 @@ static void g_particles(void)
 }
 
 /* the ship at view (x, y), heading a, a flame when it thrusts */
-/* (the user) the ship against its sun: dark, its rim lit in the sun's light (g_lit: the rim's colour, 0 none) */
+/* the ship against its sun: dark, its rim lit in the sun's light (g_lit: the rim's colour, 0 none) */
 static uint16_t g_lit;
 static void g_ship(int32_t x, int32_t y, uint32_t a, int flame, int32_t s)
 {
@@ -576,7 +554,7 @@ static void g_ship(int32_t x, int32_t y, uint32_t a, int flame, int32_t s)
         gp(x + ((g_cos(a) * 1 * s) >> 15), y + ((g_sin(a) * 1 * s) >> 15), NB);   /* the cockpit */
 }
 
-static const uint16_t G_HULL[4][11] = {   /* (the user) the ships for sale, classes 2..5, 11 x 11 each */
+static const uint16_t G_HULL[4][11] = {   /* the ships for sale, classes 2..5, 11 x 11 each */
     {0x050, 0x0F8, 0x0D8, 0x0D8, 0x1FC, 0x5DD, 0x7FF, 0x6FB, 0x4D9, 0x088, 0x104},
     {0x020, 0x070, 0x050, 0x070, 0x653, 0x6FB, 0x7FF, 0x6FB, 0x673, 0x222, 0x000},
     {0x020, 0x070, 0x0D8, 0x18C, 0x1FC, 0x3FE, 0x6DB, 0x421, 0x020, 0x050, 0x000},
@@ -757,7 +735,7 @@ static void g_markers(void)
                 }
             }
     }
-    if (g.mode == GM_SPACE) {                           /* (the user) the nearest station, always: its icon at the edge */
+    if (g.mode == GM_SPACE) {                           /* the nearest station, always: its icon at the edge */
         int32_t bd = 1 << 30, bx = 0, by = 0, qx, qy;
         g_stm.d = 0;
         for (a = sx - 6; a <= sx + 6; a++)
@@ -873,11 +851,6 @@ static void g_planets(int32_t y0, int32_t y1, planet_t *near, int *st)
                 if (x > -40 && x < gw + 40 && y > y0 - 26 && y < y1 + 26)
                     g_station_draw(x, y);
             }
-            if (g_gate_at(a, b, &x, &y)) {              /* (the user) its race gate */
-                g_w2s(x, y, &x, &y);
-                if (x > -20 && x < gw + 20 && y > y0 - 20 && y < y1 + 20)
-                    g_gate_draw(x, y);
-            }
             for (k = 0; k < G_NPL; k++) {
                 int32_t vx, vy, d;
                 if (!g_planet(a, b, k, &p))
@@ -891,18 +864,60 @@ static void g_planets(int32_t y0, int32_t y1, planet_t *near, int *st)
                 g_planet_draw(&p, vx, vy, G_PR(p), y0, y1);
                 if (g_npc_here(&p) && !(g.q_done & g_npc_bit(&p)))   /* someone waiting: ! (? when you are on their quest) */
                     g_npc_icon(vx - G_PR(p) / 2 - 8, vy - G_PR(p) - 12, g_npc_quest(a, b, k));
-                if (g_race_here(&p)) {                  /* (the user) a race here: a chequered flag over it, on a pole */
-                    int32_t fx = vx + G_PR(p) / 2, fy = vy - G_PR(p) - 10, i2, j2;
-                    for (j2 = 0; j2 < 12; j2++)
-                        gp(fx, fy + j2, NW);
-                    for (j2 = 0; j2 < 6; j2++)
-                        for (i2 = 1; i2 <= 8; i2++)
-                            gp(fx + i2, fy + j2, ((i2 / 2 + j2 / 2) & 1) ? NK : NW);
-                }
             }
         }
 }
 
+/* the race ship: now and then a ship with a chequered flag over it waits in space (when you have stood still
+ * a while, or ahead of you as you fly); B by it and you race it, the road race (rc_*), and after it you are back here */
+static struct { int32_t x, y; uint32_t t, still, next; } ev;
+static void g_say(const char *t, const char *sub);
+static void g_ev_tick(void)
+{
+    uint32_t now = fm1_ms;
+    int32_t sp = (g.vx < 0 ? -g.vx : g.vx) + (g.vy < 0 ? -g.vy : g.vy), d = 0;
+    if (!ev.next)
+        ev.next = now + 50000u;
+    if (ev.t) {
+        int32_t dx = ev.x - (g.sx >> 8), dy = ev.y - (g.sy >> 8);
+        d = dx * dx + dy * dy;
+        if (now - ev.t > 45000u || d > 600 * 600)       /* gone on its way */
+            ev.t = 0, ev.next = now + 60000u + g_hash((int32_t)now, 1, 0xE7u) % 60000u;
+        return;
+    }
+    ev.still = sp > 6 << 8 ? 0u : ev.still ? ev.still : now;
+    if ((ev.still && now - ev.still > 8000u) || (int32_t)(now - ev.next) > 0) {
+        int32_t r = ev.still ? 34 : 200;               /* (still: close by; flying: ahead of you) */
+        ev.x = (g.sx >> 8) + ((g_cos(g.ang) * r) >> 15), ev.y = (g.sy >> 8) + ((g_sin(g.ang) * r) >> 15);
+        ev.t = now, ev.still = 0;
+        g_say("A RACER", "B BY IT: RACE");
+    }
+}
+static int g_ev_near(void)
+{
+    int32_t dx = ev.x - (g.sx >> 8), dy = ev.y - (g.sy >> 8);
+    return ev.t && dx * dx + dy * dy < 28 * 28;
+}
+static void g_ev_draw(void)
+{
+    int32_t x, y, i, j;
+    if (!ev.t || g.mode != GM_SPACE || g.z < 2 || g.z > 4)
+        return;
+    g_w2s(ev.x, ev.y, &x, &y);
+    if (x < -20 || x > gw + 20 || y < -30 || y > gh + 20)
+        return;
+    for (j = 0; j < 11; j++)                            /* the ship: one of the hangar's, in race colours */
+        for (i = 0; i < 11; i++)
+            if ((G_HULL[1][j] >> (10 - i)) & 1u)
+                gp(x - 5 + i, y - 5 + j, j < 2 ? NW : (i + j) & 1 ? EY : NO);
+    for (j = 0; j < 12; j++)                            /* over it a chequered flag on its pole, waving */
+        gp(x, y - 8 - j, NW);
+    for (j = 0; j < 5; j++)
+        for (i = 1; i <= 7; i++)
+            gp(x + i, y - 19 + j + (int32_t)((i + (int32_t)(fm1_ms / 150u)) & 1u), ((i / 2 + j / 2) & 1) ? NK : NW);
+    if (g_ev_near() && (fm1_ms / 300u) & 1u)
+        gp(x + 9, y, EY), gp(x + 10, y, EY), gp(x + 11, y, EY);
+}
 /* the text in the corner: a title and a line under it, letter by letter (each purple, orange, then white), 2 s, then
  * away letter by letter, rising and coming apart in pixels */
 #define G_SAY_LET 45u
@@ -943,7 +958,7 @@ static void g_say_draw(void)
  * as you (up to the pulse jump's speed), circling round you and shooting pixels; a hit costs a unit of cargo. They give
  * up after 30 s, or when the pulse jump or a warp takes you away, or when you land */
 static uint8_t sf_on;                                   /* (the fight in space: below) */
-static uint8_t foe_look[G_NSEN];                        /* (the user) each of theirs: a hangar ship (1..4) | colour << 3 */
+static uint8_t foe_look[G_NSEN];                        /* each of theirs: a hangar ship (1..4) | colour << 3 */
 static uint32_t foe_hit_t[G_NSEN];                      /* .. hit (a flash) */
 static const uint16_t FOE_COL[8] = {ER, NO, NP, EG, EY, RGB(0xF0, 0x60, 0xC0), RGB(0x60, 0xE0, 0xFF), RGB(0xC0, 0xA0, 0x60)};
 static void sf_tick(uint32_t dt);
@@ -970,7 +985,7 @@ static void g_foes_tick(uint32_t dt)
     uint32_t i, far = 0;
     int32_t vs = g_isqrt((g.vx >> 8) * (g.vx >> 8) + (g.vy >> 8) * (g.vy >> 8));   /* px / s */
     int32_t cap = 10 * g_spd() * 3, sp = vs * 11 / 10;   /* (the boost's top: the pulse jump outruns them) */
-    if (sp < 55)                                        /* (the user: they come to you, to be seen) */
+    if (sp < 55)                                        /* (they come to you, to be seen) */
         sp = 55;
     if (sp > cap)
         sp = cap;
@@ -1034,7 +1049,7 @@ static void g_foes_tick(uint32_t dt)
 static void g_foes_draw(void)
 {
     uint32_t i;
-    for (i = 0; i < g.foe_n; i++) {                    /* (the user) a hangar ship in its colour, its nose to you; white a
+    for (i = 0; i < g.foe_n; i++) {                    /* a hangar ship in its colour, its nose to you; white a
                                                          * moment when hit; off the view: a mark of its colour at the edge */
         int32_t x, y;
         int32_t ax = (g.sx - g.foe[i].x) >> 8, ay = (g.sy - g.foe[i].y) >> 8, d, cx, cy;
@@ -1069,6 +1084,8 @@ static void g_foes_draw(void)
 #define G_HOLD_MS 250u
 static struct { uint32_t t0[2], dbl; uint8_t fired[2], both, called; } go;   /* called: A held on foot called the ship */   /* dbl: an A click waiting for a second (space) */
 #define G_DBL_A_MS 350u
+static uint32_t g_ks_t;                                 /* (the knobs' strip: g_ks_draw) */
+static uint8_t g_ks_k;
 static uint32_t g_help_t;                               /* the first-time help on screen since (0: not) */
 static int g_help_eat(uint32_t pressed)                 /* ui_input.c: a press while it shows is its own */
 {
@@ -1117,7 +1134,7 @@ static void g_space_tick(uint32_t dt)
         g_foes_tick(dt);
     sf_tick(dt);
     es_tick(dt);
-    /* (no gravity: near a planet nothing slows or pulls the ship, the user's choice; B lands it in reach) */
+    /* (no gravity: near a planet nothing slows or pulls the ship, the choice; B lands it in reach) */
     g.sx += g.vx * (int32_t)dt / 1000;
     g.sy += g.vy * (int32_t)dt / 1000;
     if (g.thr && (g.frame & 1u))                        /* the exhaust: left where it was made */
@@ -1737,7 +1754,7 @@ static void g_map(void)
 #include "nms_nave.h"
 #include "nms_nave_decola.h"
 static void g_ship_px(int32_t cx, int32_t cy, uint32_t a, int32_t L, int flame);
-/* (the user) the take-off from the 3D model: frame f of NMS_ND (its nose rising), L its half width, centred on (cx, cy) */
+/* the take-off from the 3D model: frame f of NMS_ND (its nose rising), L its half width, centred on (cx, cy) */
 static void g_ship_decola(int32_t cx, int32_t cy, int32_t L, int32_t f)
 {
 #if NMS_NAVE_DECOLA
@@ -2097,7 +2114,7 @@ static void g_takeoff_draw(uint32_t el)
             uint32_t h = g_hash(i, (int32_t)(fm1_ms / 60u), 0xD057u);
             cv_rect(sx - 60 + (int32_t)(h % 120u), sy + 6 + (int32_t)((h >> 8) % 14u), 2, 2, (h >> 16) & 1u ? NO : EY);
         }
-    {   /* (the user) the ship from the 3D model: its nose rising as it lifts (six frames), then back down to the view from
+    {   /* the ship from the 3D model: its nose rising as it lifts (six frames), then back down to the view from
          * behind (3/4); the engines' sparks under it */
         int32_t f = t < 700 ? 0 : t < 1600 ? (t - 700) * NMS_ND_N / 900 : t < 2500 ? NMS_ND_N - 1 - (t - 1600) * NMS_ND_N / 900 : 0, bx = sx + (t > 700 && t < 2300 ? (int32_t)((fm1_ms / 40u) % 3u) - 1 : 0);
         g_ship_decola(bx, sy, L, f);
@@ -2112,7 +2129,7 @@ static void g_takeoff_draw(uint32_t el)
 /* ------------------------------------------------------------ the station --- */
 /* docked: 6 rows (sell blue, green, purple, orange; the next ship; leave), the one picked in a texture of its colour */
 static const uint16_t G_ENG_PR[3] = {120, 300, 700}, G_WPN_PR[4] = {80, 220, 500, 900};
-/* (the user) the station as a hangar: every ship side by side on its pad (all five, or three at a time: KNOB 3), the
+/* the station as a hangar: every ship side by side on its pad (all five, or three at a time: KNOB 3), the
  * SELECT knob turning them round in a loop with a swing; the one in the middle has the upgrades round it, boxes over the
  * hangar with a line to the part (the engine to its tail, the weapon to its nose) and a bar like the FX lab's; selling
  * along the bottom. KNOB 1 walks the boxes (DK_ORD), B does the one picked (g_dock_do) */
@@ -2161,7 +2178,7 @@ static void g_dock(void)
     int32_t i, x, y, z, pos, sp, kc, yc, now = (int32_t)fm1_ms;
     if ((((dk_to >> 8) % 5) + 5) % 5 != g.pick)         /* (just docked: the ship you fly in the middle) */
         dk_to = dk_from = g.pick * 256;
-    pos = dk_pos(), z = 0;                              /* (the user) three at a time, no zoom */
+    pos = dk_pos(), z = 0;                              /* three at a time, no zoom */
     /* the hangar: the back wall in panels, lamps and their light, the floor in perspective */
     cv_rect(0, 20, 240, 112, EN);
     for (x = 0; x < 240; x += 40)
@@ -2310,7 +2327,7 @@ static void g_dock_do(void)
 }
 
 /* ------------------------------------------------------------- the save --- */
-/* 44 bytes appended to the free flash sector 0xFB000 (fm1_flash.h FL_GAME): 64 records of 64 B, the valid one with
+/* 44 bytes appended to the free flash sector 0xFB000 (fm1_flash.h FV_GAME): 64 records of 64 B, the valid one with
  * the highest sequence wins; the sector is erased only when full, and only while nothing plays (an erase stops the
  * audio ~50 ms). Written at most every 8 s, after a landing, a take-off, a warp, a trade, or 30 s of flight */
 #define G_SAVE_AT 0xFB000u
@@ -2368,7 +2385,7 @@ static void g_load(void)                                /* the newest valid reco
         g.px = g.tx = best.px << 8, g.py = g.ty = best.py << 8;
         g.lx = best.lx, g.ly = best.ly;
         g_sen_init();
-        g.sx = (g.pl.x + G_PR(g.pl) + 24) << 8, g.sy = g.pl.y << 8;   /* (the user: it always starts in space, by it) */
+        g.sx = (g.pl.x + G_PR(g.pl) + 24) << 8, g.sy = g.pl.y << 8;   /* (it always starts in space, by it) */
     }
 }
 
@@ -2454,8 +2471,6 @@ static void g_hud(void)
             n_texto(200 - n_w(name, 1), 4, name, 1, NW);
         }
     }
-    if (g.mode == GM_RACE && rc_space)                  /* (the space race: its dashboard says it all) */
-        return;
     if (g.mode == GM_MAP) {                             /* the map (Low Mem Sky's): how far the centre is on top; the
                                                          * system picked at the bottom; here, or the jump and the fuel */
         int32_t sx = g_sector(g.sx >> 8), sy = g_sector(g.sy >> 8), j = g_jump(g.mx - sx, g.my - sy), np = 0, qx, qy;
@@ -2720,7 +2735,7 @@ static void sloop_splash(void)                          /* the boot screen (main
     for (half = 0; half < 2u; half++) {
         cv_begin(240, 120, NK);
         cv_oy = -(int32_t)(half * 120u);
-        {   /* only the stars (the user: no logo here): the opening starts from them, the ship coming in */
+        {   /* only the stars (no logo here): the opening starts from them, the ship coming in */
             uint32_t i;
             for (i = 0; i < 30u; i++) {
                 uint32_t h = g_hash((int32_t)i, 3, 0x5A5Au);
@@ -2762,11 +2777,11 @@ static void g_set_mode(uint32_t m)
 /* land on g.pl: a place on land near its middle, the ship parked there */
 
 /* -------------------------------------------------------------- the NPCs --- */
-/* (the user) some planets have someone waiting (a yellow box with ! over the planet, from space; ? once you took what
+/* some planets have someone waiting (a yellow box with ! over the planet, from space; ? once you took what
  * they ask). Land there: they stand by your ship; walk up to them and they speak, a little box at the bottom: bring me
  * N of this (its icon). Come back with it and they take it: credits. In space now and then another ship flies by and
  * you talk over the radio, a balloon from each */
-static int g_npc_here(const planet_t *p) { return (p->seed >> 17) % 3u == 0u && !g_race_here(p); }
+static int g_npc_here(const planet_t *p) { return (p->seed >> 17) % 3u == 0u; }
 static uint32_t g_npc_bit(const planet_t *p) { return 1u << ((p->seed >> 7) & 31u); }
 static int g_npc_quest(int32_t sx, int32_t sy, uint32_t k) { return g.q_on && g.q_sx == sx && g.q_sy == sy && g.q_pk == k; }
 /* someone: 7 x 12, after the little pixel figures: a head, a body, legs; colours of their own (the planet's seed) */
@@ -2839,7 +2854,7 @@ static void g_npc_talk_draw(void)                       /* the box at the bottom
     n_texto(38, 190, t, 1, g.res[g.q_k] >= g.q_n ? EG : NW);
 }
 /* a ship passing in space, talking over the radio: two balloons in turn */
-static void g_radio_at(int32_t el, int32_t *x, int32_t *y)   /* (the user) its way: straight across, slowing to talk (2 s),
+static void g_radio_at(int32_t el, int32_t *x, int32_t *y)   /* its way: straight across, slowing to talk (2 s),
                                                          * nearly still while you talk, then off, faster and faster */
 {
     int32_t d1 = gw * 45 / 100, sd;
@@ -2917,7 +2932,7 @@ static void g_radio_draw(void)
         return;
     }
     if (el > 2000u && el < 4300u)                       /* their words (stopped), in the middle, fixed; a line to them */
-        g_radio_box(120 - n_w(L[pair * 2u], 1) / 2, 72, L[pair * 2u], NW, x * s, y * s);   /* (the user: in the middle) */
+        g_radio_box(120 - n_w(L[pair * 2u], 1) / 2, 72, L[pair * 2u], NW, x * s, y * s);   /* (in the middle) */
     else if (el >= 4300u && el < 6500u)                 /* yours, under you, fixed; a line to you */
         g_radio_box(120 - n_w(L[pair * 2u + 1u], 1) / 2, 142, L[pair * 2u + 1u], EY, 120, 128);   /* (clear of the distances) */
 }
@@ -2978,7 +2993,7 @@ static void g_home_tap(void)                            /* ui_input.c: HOME tapp
 static int32_t g_tr[G_TRN][2];                         /* the trail: the last places at full speed (world px) */
 static uint32_t g_tr_i, g_tr_t;
 /* ------------------------------------------------------------ the battle --- */
-/* (the user) taking off with the sentinels after you: a fight in space, cinematic, seen from above: your little ship at
+/* taking off with the sentinels after you: a fight in space, cinematic, seen from above: your little ship at
  * the bottom flying up, the planet you left behind it, asteroids drifting, the sun, all under a dark mesh so the fight
  * stands out. Three waves of little dark ships (4, 6, 8; three hits each) fire on the beat; then the boss: a colossal
  * ship wider than the screen, about a minute, its hull burning red where you hit it until those pixels blow and are
@@ -3008,7 +3023,7 @@ static struct {
     int32_t hp, hpmax, bx;                              /* its life, where it is across (screen px of its middle) */
 } bt;
 /* a little ship seen from above, nose down, 9 x 7 (drawn 2 x): its hull, two red lights, its engine at the back */
-static const uint16_t BT_INV[5][8] = {                 /* (the user) the little ones as invaders: 11 x 8 each */
+static const uint16_t BT_INV[5][8] = {                 /* the little ones as invaders: 11 x 8 each */
     {0x104, 0x088, 0x1FC, 0x376, 0x7FF, 0x5FD, 0x505, 0x0D8},
     {0x070, 0x3FE, 0x7FF, 0x739, 0x7FF, 0x0D8, 0x1AC, 0x606},
     {0x020, 0x070, 0x1FC, 0x3AE, 0x7FF, 0x252, 0x401, 0x202},
@@ -3058,7 +3073,7 @@ static void bt_boss_make(uint32_t seed)
     }
     for (y = 23; y < 29; y++)                           /* the engines, at the left end */
         bt.hull[y][2] = bt.hull[y][3] = 4;
-    bt.hpmax = bt.hp = 460 + (int32_t)(s % 60u);        /* (the user: about 30 s, holding keys fires on) */        /* (the user: about a minute, keys on the eighths) */
+    bt.hpmax = bt.hp = 460 + (int32_t)(s % 60u);        /* (about 30 s, holding keys fires on) */        /* (about a minute, keys on the eighths) */
     bt.view = 0, bt.bt0 = fm1_ms, bt.beats = 0, bt.bx = 120;
 }
 static void bt_boss_hit(int32_t x, int32_t y, int32_t r, int32_t dmg)   /* a hit at screen (x, y): the hull there catches fire */
@@ -3068,7 +3083,7 @@ static void bt_boss_hit(int32_t x, int32_t y, int32_t r, int32_t dmg)   /* a hit
         for (i = -r; i <= r; i++)
             if ((uint32_t)(cx + i) < (uint32_t)BT_BW && (uint32_t)(cy + j) < (uint32_t)BT_BH && i * i + j * j <= r * r) {
                 uint8_t *c = &bt.hull[cy + j][cx + i];
-                if (*c >= 5u) {                         /* (the user) burning already: hit again, it blows away */
+                if (*c >= 5u) {                         /* burning already: hit again, it blows away */
                     *c = 0;
                     if (((cx + i + cy + j) & 3) == 0)
                         bt_spark(bt.bx - BT_BW + (cx + i) * 2, BT_BY + (cy + j) * 2, 2, 1);
@@ -3201,7 +3216,7 @@ static void bt_tick(uint32_t dt)
     if (bt.wave == BT_BOSS) {
         alive = bt.hp > 0;
         bt.bx = 120 + ((g_sin(fm1_ms / 17u) * 40) >> 15);
-        bt.hp = bt.hpmax - (int32_t)(fm1_ms - bt.bt0) * bt.hpmax / 30000;   /* (the user) always 30 s */
+        bt.hp = bt.hpmax - (int32_t)(fm1_ms - bt.bt0) * bt.hpmax / 30000;   /* always 30 s */
         if (bt.hp > 0 && bt.hp * 2 < bt.hpmax && !bt.view)   /* its half: a word */
             bt.view = 2, g_say("IT BREAKS", "KEEP FIRING");
         for (k = 0; k < 40u; k++) {                     /* the hull burning: some cells burn down, the last blow */
@@ -3217,7 +3232,7 @@ static void bt_tick(uint32_t dt)
             }
         }
     }
-    {   /* (the user) the keys: each held key fires, and again every eighth while held; the track's DELAY sends echoes
+    {   /* the keys: each held key fires, and again every eighth while held; the track's DELAY sends echoes
          * of each shot after it (an eighth apart, up to 3), its REVERB spreads them sideways */
         static uint32_t held_t[27];
         static struct { uint32_t t; int8_t dx; } echo[12];
@@ -3231,13 +3246,13 @@ static void bt_tick(uint32_t dt)
                 fire = 1, held_t[k] = fm1_ms;
             if (!fire)
                 continue;
-            {   /* (the user) each more note held: a wingman beside you, firing too; each shot kicks them back */
+            {   /* each more note held: a wingman beside you, firing too; each shot kicks them back */
                 int32_t w, nw2 = bt_wings();
                 for (w = 0; w <= nw2; w++) {
                     int32_t wx = px + (w == 0 ? 0 : (w & 1 ? -1 : 1) * 22 * ((w + 1) / 2));
                     if (w == 0)
                         bt_launch(wx - 4, BT_Y - 10, 0, -320 << 8, 1), bt_launch(wx + 4, BT_Y - 10, 0, -320 << 8, 1);
-                    else                                /* (the user) the wingmen: a homing laser, a white line to its mark */
+                    else                                /* the wingmen: a homing laser, a white line to its mark */
                         bt_zap(wx, BT_Y + 6);
                 }
                 bt_kick = 5;
@@ -3471,7 +3486,7 @@ static void bt_me(int32_t cx, int32_t cy, int32_t sc)   /* your ship (the triang
     cv_rect(cx + 3 * sc, cy + 2 * sc, 1, 8 + 3 * sc + f, RGB(0x30, 0x60, 0xF0)), cv_rect(cx + 3 * sc, cy + 2 * sc, 1, 3, RGB(0xB0, 0xE0, 0xFF));
     cv_rect(cx - 1, cy + sc + 1, 3, 2 + (f & 1), EY), cv_pset(cx, cy + sc + 3 + f / 2, NO);
     gz = 1, gw = gh = 240;
-    if (sc > 1 && g.cls)                                /* (the user) your ship as bought; the wingmen mini triangles */
+    if (sc > 1 && g.cls)                                /* your ship as bought; the wingmen mini triangles */
         g_hull(cx, cy, g.cls, 2, RGB(0x90, 0xA0, 0xC0));
     else
         g_ship(cx, cy, 768u, 0, sc);
@@ -3514,7 +3529,7 @@ static void bt_backdrop(int32_t y0, int32_t y1)         /* space behind the figh
     }
     gz = ogz, gw = ogw, gh = ogh, g.fade = (uint8_t)ofade;
 }
-static void bt_bolt(int32_t x, int32_t y, int kind)     /* (the user) your shot, a laser by the weapon's level: green, then
+static void bt_bolt(int32_t x, int32_t y, int kind)     /* your shot, a laser by the weapon's level: green, then
                                                          * doubled, cyan and longer, violet and wide, gold and widest */
 {
     static const uint16_t WC[5][3] = {{RGB(0x20, 0x70, 0x10), RGB(0x70, 0xE0, 0x30), RGB(0xD0, 0xFF, 0xA0)},
@@ -3592,7 +3607,7 @@ static void bt_bill(int32_t cx, int32_t by, int32_t w, int32_t h, int kind, uint
 }
 
 /* ------------------------------------------------------------- the race --- */
-/* (the user) some planets hold a race (a chequered flag on them, from space): landing there you line up with five other
+/* some planets hold a race (a chequered flag on them, from space): landing there you line up with five other
  * ships, the same ship in other colours, the engines start, 3 2 1 GO, and you race three laps of a road over the planet,
  * from behind your ship (a pseudo-3D road, as the night-drive visualizer: rows from the horizon down, its dashes and
  * edges, posts with lamps; the planet's ground small and slow on both sides; its mountains in two silhouettes; banks of
@@ -3607,7 +3622,7 @@ static struct {
     uint32_t t0, done_t;
     uint8_t place, passed, gear;
     int8_t thr;
-    uint32_t shift_t;                                   /* (the user) a gear change: the moment */
+    uint32_t shift_t;                                   /* a gear change: the moment */
 } rc;
 static const uint16_t RC_COL[RC_N][2] = {{RGB(0x30, 0x80, 0xF0), RGB(0x90, 0xD0, 0xFF)}, {RGB(0x30, 0xC0, 0x50), RGB(0xB0, 0xF0, 0x90)},
     {RGB(0xF0, 0xC0, 0x20), RGB(0xFF, 0xF0, 0xA0)}, {RGB(0x90, 0x40, 0xE0), RGB(0xD0, 0xB0, 0xFF)}, {RGB(0xE0, 0xE0, 0xE0), NW}};
@@ -3627,7 +3642,7 @@ static void rc_tick(uint32_t dt)
     if (dt > 100u)
         dt = 100u;
     if (!rc.done_t && el >= RC_GO) {
-        {   /* (the user) it all speeds up fast, through five gears: each gear's top, a breath at the change */
+        {   /* it all speeds up fast, through five gears: each gear's top, a breath at the change */
             int32_t gt = top * (int32_t)(rc.gear + 1u) / 5;
             if (fm1_ms - rc.shift_t > 140u)
                 rc.v += (gt + gt / 8 - rc.v) * (int32_t)dt / (180 + (int32_t)rc.gear * 70);
@@ -3638,7 +3653,7 @@ static void rc_tick(uint32_t dt)
             else if (rc.gear && rc.v < top * (int32_t)rc.gear / 5 * 80 / 100)
                 rc.gear--;
         }
-        {   /* (the user) it drives itself: round the bends, past the ship ahead of it (KNOB 1 still nudges it) */
+        {   /* it drives itself: round the bends, past the ship ahead of it (KNOB 1 still nudges it) */
             int32_t want = 0;
             for (i = 0; i < RC_N; i++) {
                 int32_t dz = rc.rd[i] - rc.d;
@@ -3661,7 +3676,7 @@ static void rc_tick(uint32_t dt)
         rc.rl[i] = ((g_sin((uint32_t)(rc.rd[i] / 7 + (int32_t)i * 200) & 1023u) * 70) >> 15);
         if (i == RC_N - 1u && rc.rd[i] > rc.d + 1500)   /* (the fast one: far ahead, it comes again from behind) */
             rc.rd[i] = rc.d - 400, rc.rv[i] = 700;
-        if (rc.rd[i] < rc.d - 60 && !(i == RC_N - 1u && rc.rv[i] > rc.v)) {   /* (the user) passed: another one comes up ahead */
+        if (rc.rd[i] < rc.d - 60 && !(i == RC_N - 1u && rc.rv[i] > rc.v)) {   /* passed: another one comes up ahead */
             rc.rd[i] = rc.d + 500 + (int32_t)(g_hash((int32_t)i, rc.d, 0x7A5u) % 700u), rc.rv[i] = 200;
             if (rc.passed < 250u)
                 rc.passed++;
@@ -3686,165 +3701,6 @@ static int32_t rc_cx(int32_t y)
 {
     int32_t f = 240 - y;
     return 120 - rc.lane * rc_w(y) / 120 + rc_curve(rc.d) * f * f / 15000;
-}
-/* (the user) the race in space, after the synthwave drives: a road floating among the stars, neon at its edges, a
- * spiral galaxy in the sky; first person, the dashboard under it (pixel art, after the cars' and Knight Rider's):
- * time, lap, passed; the revs on a rising arc, the speed in big digits, the gear; shift lights, a radar */
-#define RS_HZ 70
-#define RS_BOT 150
-static int32_t rs_w(int32_t y) { return (y - RS_HZ) * 9 / 8 + 2; }
-static int32_t rs_cx(int32_t y)
-{
-    int32_t f = RS_BOT + 20 - y;
-    return 120 - rc.lane * rs_w(y) / 120 + rc_curve(rc.d) * f * f / 9000;
-}
-static void rs_galaxy(int32_t gx, int32_t gy)
-{
-    uint32_t arm, t, now = fm1_ms;
-    int32_t i, j;
-    for (j = -5; j <= 5; j++)                           /* the core: white into yellow, dithered */
-        for (i = -12; i <= 12; i++) {
-            int32_t q = i * i / 4 + j * j * 4;
-            if (q < 36 && (int32_t)BAYER[(gy + j) & 3][(gx + i) & 3] < 16 - q * 16 / 36)
-                cv_pset(gx + i, gy + j, q < 8 ? NW : q < 20 ? RGB(0xFF, 0xF0, 0xB0) : RGB(0xF0, 0xA0, 0xC0));
-        }
-    for (arm = 0; arm < 2u; arm++)                      /* two arms, winding out, turning slowly */
-        for (t = 0; t < 260u; t++) {
-            uint32_t h = g_hash((int32_t)t, (int32_t)arm, 0x6A1u), a = t * 6u + arm * 512u + now / 90u + (h & 31u);
-            int32_t r = 4 + (int32_t)t / 5 + (int32_t)((h >> 5) & 3u) - 1;
-            int32_t x = gx + ((g_cos(a & 1023u) * r) >> 15), y = gy + (((g_sin(a & 1023u) * r) >> 15) * 2 / 5);
-            if ((h >> 9) % 3u == 0u)
-                continue;
-            cv_pset(x, y, t < 50u ? RGB(0xFF, 0xE0, 0xC0) : t < 130u ? ((h >> 12) & 1u ? RGB(0xE0, 0x70, 0xD0) : NP) : ((h >> 12) & 1u ? NB : RGB(0x60, 0xB0, 0xFF)));
-        }
-}
-static void rs_dash(void)
-{
-    static const uint16_t TD = RGB(0x0C, 0x36, 0x44), TM = RGB(0x18, 0x64, 0x74), TL = RGB(0x48, 0xB0, 0xC0), LCD = RGB(0xD8, 0xF0, 0x90);
-    uint32_t now = fm1_ms, el = now - rc.t0, s = el < RC_GO ? 0u : ((rc.done_t ? rc.done_t : now) - rc.t0 - RC_GO) / 100u;
-    int32_t top = (8 + g_spd() * 2 + rc.thr * 3) * 14, gt = top * (int32_t)(rc.gear + 1u) / 5, g0 = top * (int32_t)rc.gear / 5;
-    int32_t rev = el < RC_GO ? (int32_t)el * 400 / (int32_t)RC_GO + (int32_t)((now / 60u) % 3u) * 30 : gt > g0 ? (rc.v - g0) * 1000 / (gt - g0) : 0;
-    int32_t i, sh = el >= RC_GO && now - rc.shift_t < 300u;
-    char t[16];
-    cv_rect(0, RS_BOT, 240, 90, TD);                    /* the dash: its top edge lit, the column in the middle */
-    cv_rect(0, RS_BOT, 240, 2, TL), cv_rect(0, RS_BOT + 2, 240, 1, TM);
-    cv_rect(106, RS_BOT, 28, 90, TM), cv_rect(110, RS_BOT + 10, 20, 44, NK), n_frame(110, RS_BOT + 10, 20, 44, 1, TL);
-    {   /* the column's cross: where you are on the road (a dot running left / right) */
-        int32_t lx = 120 + rc.lane * 8 / 110;
-        cv_rect(119, RS_BOT + 14, 2, 36, ER), cv_rect(113, RS_BOT + 31, 14, 2, ER);
-        cv_rect(lx - 2, RS_BOT + 30, 4, 4, (now / 200u) & 1u ? EY : NW);
-    }
-    cv_rect(4, RS_BOT + 8, 98, 52, NK), n_frame(4, RS_BOT + 8, 98, 52, 1, TL);   /* left: time, lap, passed */
-    n_texto(8, RS_BOT + 10, "TIME", 1, ER);
-    fmt_int(t, (int32_t)(s / 600u)), str_cpy(t + str_len(t), ":", 2);
-    t[str_len(t) + 1] = 0, t[str_len(t)] = (char)('0' + s / 10u % 60u / 10u);
-    t[str_len(t) + 1] = 0, t[str_len(t)] = (char)('0' + s / 10u % 10u);
-    t[str_len(t) + 1] = 0, t[str_len(t)] = '.';
-    t[str_len(t) + 1] = 0, t[str_len(t)] = (char)('0' + s % 10u);
-    n_texto(98 - n_w(t, 1), RS_BOT + 10, t, 1, LCD);
-    {
-        uint32_t lap = (uint32_t)(rc.d / RC_LAP) + 1u;
-        str_cpy(t, "LAP ", 5), fmt_int(t + 4, (int32_t)(lap > 3u ? 3u : lap)), str_cpy(t + str_len(t), "/3", 3);
-        n_texto(8, RS_BOT + 26, t, 1, NW);
-        fmt_int(t, (int32_t)rc.passed);
-        n_texto(8, RS_BOT + 42, "PASSED", 1, NB);
-        n_texto(98 - n_w(t, 1), RS_BOT + 42, t, 1, LCD);
-    }
-    cv_rect(138, RS_BOT + 8, 98, 52, NK), n_frame(138, RS_BOT + 8, 98, 52, 1, TL);   /* right: the revs, the speed, the gear */
-    rev = clamp(rev, 0, 1000);
-    for (i = 0; i < 14; i++) {                          /* the arc: cells rising, yellow to orange to red */
-        int32_t q = (13 - i) * (13 - i), y = RS_BOT + 12 + q * 12 / 169, x = 142 + i * 5, on = i * 1000 / 14 < rev;
-        uint16_t c = i < 8 ? EY : i < 11 ? NO : ER;
-        cv_rect(x, y, 4, 3 + i / 5, on ? c : RGB(0x30, 0x20, 0x10));
-        if (on)
-            cv_rect(x, y, 4, 1, NW);
-    }
-    fmt_int(t, rc.v / 3);
-    n_texto(200 - n_w(t, 2), RS_BOT + 28, t, 2, LCD);
-    n_texto(204, RS_BOT + 40, "U/S", 1, NP);
-    cv_rect(212, RS_BOT + 12, 20, 22, sh ? EY : TD), n_frame(212, RS_BOT + 12, 20, 22, 1, TL);
-    t[0] = (char)('1' + rc.gear), t[1] = 0;
-    n_texto(218, RS_BOT + 14, t, 1, sh ? NK : EY);
-    for (i = 0; i < 5; i++)                             /* the gears: a cell each, lit up to this one */
-        cv_rect(142 + i * 8, RS_BOT + 50, 6, 6, (uint32_t)i <= rc.gear ? (sh ? EY : NB) : TM);
-    for (i = 0; i < 6; i++) {                           /* bottom left: the shift lights; all flashing at the change */
-        int32_t on = rev > 500 + i * 80;
-        uint16_t c = i < 3 ? EG : i < 5 ? EY : ER;
-        cv_rect(8 + i * 14, RS_BOT + 68, 10, 8, sh ? ((now / 60u) & 1u ? ER : NB) : on ? c : TM);
-    }
-    n_texto(8, RS_BOT + 72 + 4, g_down(0) ? "BOOST" : "", 1, NO);
-    cv_rect(150, RS_BOT + 64, 82, 24, RGB(0x06, 0x22, 0x2C)), n_frame(150, RS_BOT + 64, 82, 24, 1, TL);   /* the radar */
-    for (i = 0; i < (int32_t)RC_N; i++) {
-        int32_t dz = rc.rd[i] - rc.d, rx = 190 + rc.rl[i] / 6, ry = RS_BOT + 82 - dz / 60;
-        if (ry > RS_BOT + 65 && ry < RS_BOT + 87)
-            cv_rect(rx, ry, 3, 2, i == (int32_t)RC_N - 1 ? NO : ER);
-    }
-    cv_rect(190 + rc.lane / 6, RS_BOT + 82, 3, 3, EY);
-}
-static void rc_draw_space(int32_t y0, int32_t y1)
-{
-    uint32_t now = fm1_ms, el = now - rc.t0;
-    int32_t x, y, k;
-    for (y = y0 < 0 ? 0 : y0; y < y1 && y < RS_BOT; y++)
-        cv_rect(0, y, 240, 1, NK);
-    for (k = 0; k < 70; k++) {                          /* the stars, sliding with the bends */
-        uint32_t h = g_hash(k, 1, 0x57A2u);
-        x = (int32_t)(((h % 240u) + 2400u - (uint32_t)(rc.sky / 8) % 240u) % 240u), y = (int32_t)((h >> 8) % (uint32_t)(RS_BOT - 2));
-        cv_pset(x, y, (h >> 20) % 4u == 0u ? EY : (h >> 20) % 4u == 1u ? NB : NW);
-    }
-    rs_galaxy(160 - (rc.sky / 24) % 300 + ((rc.sky / 24) % 300 < -140 ? -300 : 0), 34);
-    for (k = 0; k < 40; k++) {                          /* under the road: stars rushing at you */
-        uint32_t h = g_hash(k, 2, 0x57A3u);
-        int32_t z = 1024 - (int32_t)(((h >> 8) % 1024u + (uint32_t)rc.d) % 1024u), sx = (int32_t)(h % 300u) - 150;
-        if (z < 40)
-            continue;
-        x = 120 + sx * 60 / z * 2, y = RS_HZ + 4 + 2400 / z;
-        if (y < RS_BOT && x >= 0 && x < 240)
-            cv_rect(x, y, 1 + (z < 200), 1 + (z < 120), z < 200 ? NW : NB);
-    }
-    for (y = RS_HZ + 1; y < RS_BOT; y++) {              /* the road: dark, neon edges, green dashes, lamps */
-        int32_t d = y - RS_HZ, z = 6000 / d, w = rs_w(y), cx = rs_cx(y), on = ((z + rc.d) / 40) & 1, dw = 1 + d / 14;
-        if (y < y0 || y >= y1)
-            continue;
-        cv_rect(cx - w, y, 2 * w, 1, RGB(0x14, 0x12, 0x22));
-        cv_rect(cx - w - 1 - d / 24, y, 2 + d / 24, 1, NO), cv_rect(cx + w - 1, y, 2 + d / 24, 1, NO);
-        if ((y + (int32_t)(rc.d / 8)) & 1)              /* (their glow: a dither out from the edges) */
-            cv_pset(cx - w - 3 - d / 24, y, ER), cv_pset(cx + w + 2 + d / 24, y, ER);
-        if (on)
-            cv_rect(cx - w / 3 - dw / 2, y, dw, 1, RGB(0x40, 0xF0, 0x90)), cv_rect(cx + w / 3 - dw / 2, y, dw, 1, RGB(0x40, 0xF0, 0x90));
-        if (((z + rc.d) % 180) < 3 && d > 3) {          /* lamps on the edges: cyan, white hot */
-            cv_rect(cx - w - 2 - d / 12, y - 1 - d / 20, 2 + d / 12, 2 + d / 20, RGB(0x60, 0xE0, 0xFF));
-            cv_rect(cx + w, y - 1 - d / 20, 2 + d / 12, 2 + d / 20, RGB(0x60, 0xE0, 0xFF));
-        }
-        cv_rect(cx - w, y + 1, 2 * w, (y == RS_BOT - 1) ? 0 : 0, NK);
-    }
-    for (k = (int32_t)RC_N - 1; k >= 0; k--) {          /* the others, the far ones first */
-        int32_t dz = rc.rd[k] - rc.d, yy, w;
-        if (dz < -20 || dz > 1400)
-            continue;
-        yy = RS_HZ + (RS_BOT - RS_HZ) * 60 / (dz + 60);
-        if (yy >= RS_BOT + 6 || yy <= RS_HZ)
-            continue;
-        w = rs_w(yy);
-        g_ship_tint(rs_cx(yy) + rc.rl[k] * w / 120, yy - w / 14, 2 + w * 16 / 256, RC_COL[k][0], RC_COL[k][1]);
-    }
-    if (rc.v > 450)                                     /* fast: streaks down the sides */
-        for (k = 0; k < 8; k++) {
-            uint32_t h = g_hash(k, (int32_t)(now / 50u), 0x5BEu);
-            int32_t sx = (h & 1u) ? 4 + (int32_t)((h >> 4) % 50u) : 186 + (int32_t)((h >> 4) % 50u), sy = 90 + (int32_t)((h >> 12) % 50u);
-            cv_rect(sx, sy, 1, 6 + (int32_t)((h >> 20) % 10u), NW);
-        }
-    rs_dash();
-    if (el < RC_GO) {                                   /* the countdown */
-        const char *t = el < 1200u ? "ENGINES ON" : el < 2200u ? "3" : el < 3200u ? "2" : "1";
-        uint32_t zz = el < 1200u ? 1u : 5u;
-        n_texto(120 - n_w(t, zz) / 2, el < 1200u ? 100 : 76, t, zz, el < 1200u ? EY : NW);
-        if (el >= 1200u)
-            for (k = 0; k < 3; k++)
-                n_disc(96 + k * 24, 30, 7, (int32_t)(el - 1200u) / 1000 >= k ? ER : RGB(0x40, 0x10, 0x10));
-    } else if (el < RC_GO + 800u) {
-        n_texto(120 - n_w("GO", 5) / 2, 76, "GO", 5, EG);
-    }
 }
 static void rc_draw(int32_t y0, int32_t y1)
 {
@@ -3907,7 +3763,7 @@ static void rc_draw(int32_t y0, int32_t y1)
         w = rc_w(yy);
         g_ship_tint(rc_cx(yy) + rc.rl[k] * w / 120, yy - w / 10, 3 + w * 22 / 256, RC_COL[k][0], RC_COL[k][1]);
     }
-    {   /* you: (the user) no shake: the jets behind swelling as the engines wake, then with the speed */
+    {   /* you: no shake: the jets behind swelling as the engines wake, then with the speed */
         int32_t pw = el < RC_GO ? (int32_t)el * 160 / (int32_t)RC_GO : 160 + rc.v * 96 / 900, j2, f = (int32_t)((now / 50u) % 3u);
         if (pw > 256)
             pw = 256;
@@ -3927,7 +3783,7 @@ static void rc_draw(int32_t y0, int32_t y1)
                 cv_rect(sx, sy, 1, 10 + (int32_t)((h >> 20) % 14u), NW);
             }
     }
-    if (el >= RC_GO) {   /* (the user) the speed: a number, the gear, its revs in cells (red at the top), SHIFT */
+    if (el >= RC_GO) {   /* the speed: a number, the gear, its revs in cells (red at the top), SHIFT */
         char t[8];
         int32_t gt = (8 + g_spd() * 2 + rc.thr * 3) * 14 * (int32_t)(rc.gear + 1u) / 5, g0 = gt * (int32_t)rc.gear / (int32_t)(rc.gear + 1u);
         int32_t rev = gt > g0 ? (rc.v - g0) * 1000 / (gt - g0) : 0, sh = now - rc.shift_t < 300u;
@@ -3968,6 +3824,361 @@ static void rc_draw(int32_t y0, int32_t y1)
         (void)ahead;
     }
     (void)i;
+}
+/* ------------------------------------------------------- flying over a planet --- */
+/* choosing a planet you come down into it flying, behind the ship: the planet's own ground (the one you walk
+ * on) in 3D, as voxels (each column of the view walks its ray out over the height map, near to far, drawing what rises
+ * over what it drew: the sea, the sand, the grass and its trees, the hills, the peaks; far off a haze). KNOB 1 turns,
+ * KNOB 2 the speed, OCT- held a boost, KNOB 3 out back to space. B held over land: the ship comes down (bigger as it
+ * nears), a tree under it blows to pixels, and you walk; over the sea it will not. Fast for a while (the top speed or
+ * the boost) and it is a race: four ships come up beside you, beams of light stand over the land ahead, the first
+ * through all six wins. In the race B held lands a moment (the others fly on), B again and you fly */
+#define FV_W 80                                         /* the view in 3 x 3 px cells */
+#define FV_H 80
+#define FV_HZ 22                                        /* the horizon (cells) */
+#define FV_K 40                                         /* the lens: a height unit a cell, 40 px off */
+#define FV_NR 4u
+#define FV_NC 6u
+#define FV_NB 20u
+static uint32_t g_atan2(int32_t dy, int32_t dx);
+static uint8_t g_overlay;                               /* a screen over the game: it is not being shown */
+static uint8_t fv_buf[FV_W * FV_H];                     /* what each cell shows (fv_col), 0 the sky */
+static struct {
+    int32_t x, y, alt, v;                               /* you: world px Q8, height units Q8, px / s */
+    uint32_t ang;                                       /* the heading, 0..1023 */
+    int32_t camx, camy, camz, fx, fy;                   /* this frame's camera (world px, units) and forward (Q15) */
+    uint32_t down_t, fast_t, race_t, done_t, slow_t, boom_t;
+    int8_t thr;
+    uint8_t down, race, cp, place, gone_n, rcp[FV_NR];   /* down: 1 coming down, 2 on the ground */
+    int32_t cx[FV_NC], cy[FV_NC];                       /* the race's beams (world px) */
+    int32_t rx[FV_NR], ry[FV_NR], rv[FV_NR];            /* the others: world px Q8, px / s */
+    uint32_t gone[6];                                   /* trees blown (their cells) */
+    struct { int16_t x, y, vx, vy; uint16_t c; } bit[FV_NB];   /* a tree's pixels (screen px Q4) */
+} fv;
+static const uint16_t FV_COL[FV_NR][2] = {{RGB(0x30, 0x80, 0xF0), RGB(0x90, 0xD0, 0xFF)}, {RGB(0x30, 0xC0, 0x50), RGB(0xB0, 0xF0, 0x90)},
+    {RGB(0xF0, 0xC0, 0x20), RGB(0xFF, 0xF0, 0xA0)}, {RGB(0x90, 0x40, 0xE0), RGB(0xD0, 0xB0, 0xFF)}};
+static uint32_t fv_cell(int32_t x, int32_t y) { return ((uint32_t)(x >> 3) & 0xFFFFu) | (uint32_t)(y >> 3) << 16; }
+static int fv_tree(int32_t x, int32_t y)                /* a tree stands on (x, y): one 8 x 8 cell in eleven, round */
+{
+    int32_t dx = (x & 7) - 4, dy = (y & 7) - 4;
+    uint32_t k = fv_cell(x, y), i;
+    if (g_hash(x >> 3, y >> 3, g.pl.seed ^ 0x7EEu) % 11u || dx * dx + dy * dy > 6)
+        return 0;
+    for (i = 0; i < fv.gone_n; i++)
+        if (fv.gone[i] == k)
+            return 0;
+    return 1;
+}
+/* the ground at (x, y): its height (units: the walking map's height / 2) and what it is, *m: 1 deep sea, 2 sea, 3 the
+ * coast, 4 sand, 5 grass, 6 hills, 7 peaks, 8 a tree; far: the big shapes only (cheaper). (Heights 3 / 4 of the map's:
+ * the land stands up, the hills read as hills) */
+static int32_t fv_h(int32_t x, int32_t y, uint32_t *m, int far)
+{
+    int32_t sea = g_sea(), h = far ? (int32_t)g_vnoise(x, y, g.pl.seed, 5, 0) : g_height(x, y);
+    if (h < sea) {
+        *m = h > sea - 10 ? 2u : 1u;
+        return sea * 3 >> 2;
+    }
+    *m = h < sea + 3 ? 3u : h < sea + 12 ? 4u : h < 165 ? 5u : h < 205 ? 6u : 7u;
+    if (*m == 5u && !far && fv_tree(x, y))
+        return *m = 8u, (h * 3 >> 2) + 7;
+    return h * 3 >> 2;
+}
+static uint16_t fv_col(uint32_t m, int32_t x, int32_t y)   /* a cell's colour: its kind, its place (patterns) */
+{
+    uint16_t c, lc = GCOL[g.pl.land & 7u], hc = GCOL[g.pl.land2 & 7u], wc = GCOL[g.pl.water & 7u];
+    switch (m & 15u) {
+    case 1: c = ((x + y + (int32_t)(fm1_ms / 300u)) % 5) == 0 ? wc : EN; break;
+    case 2: c = ((x + y) & 1) ? wc : EN; break;
+    case 3: c = NW; break;
+    case 4: c = ((x & 1) && (y & 1)) ? NW : NO; break;
+    case 5: c = ((x & 3) == 0 && (y & 3) == 0) ? NK : lc; break;
+    case 6: c = ((x - y) & 3) == 0 ? NW : hc; break;
+    case 7: c = ((x + y) & 3) == 0 ? lc : NW; break;
+    case 8: c = ((x + y) & 1) ? hc : NK; break;
+    default: c = NK; break;
+    }
+    if ((m & 16u) && BAYER[y & 3][x & 3] < 7)          /* a side, turned from the light */
+        c = NK;
+    if ((m & 32u) && (int32_t)BAYER[y & 3][x & 3] < ((m & 64u) ? 11 : 5))   /* far: the haze */
+        c = NP;
+    return c;
+}
+static void fv_render(void)                             /* once a frame: the view into fv_buf */
+{
+    int32_t i, j;
+    for (i = 0; i < FV_W * FV_H; i++)
+        fv_buf[i] = 0;
+    for (i = 0; i < FV_W; i++) {
+        int32_t u = i - FV_W / 2, dx = fv.fx - fv.fy * u / 44, dy = fv.fy + fv.fx * u / 44, z, yb = FV_H, last = -1;
+        for (z = 4; z < 440 && yb > 0; z += 1 + z / 24) {
+            uint32_t m;
+            int32_t h = fv_h(fv.camx + (dx * z >> 15), fv.camy + (dy * z >> 15), &m, z > 150), sy = FV_HZ + (fv.camz - h) * FV_K / z;
+            if (sy >= yb) {
+                last = h;
+                continue;
+            }
+            if (sy < 0)
+                sy = 0;
+            if (z > 220)
+                m |= z > 330 ? 96u : 32u;               /* (far: the haze, thicker further) */
+            for (j = sy; j < yb; j++)                   /* its top lit, the rest of the rise its side */
+                fv_buf[j * FV_W + i] = (uint8_t)(j == sy || h <= last ? m : m | 16u);
+            yb = sy, last = h;
+        }
+    }
+}
+static int fv_proj(int32_t wx, int32_t wy, int32_t h, int32_t *sx, int32_t *sy, int32_t *z)   /* to screen px */
+{
+    int32_t dx = wx - fv.camx, dy = wy - fv.camy, zz = (dx * fv.fx + dy * fv.fy) >> 15, xr = (dy * fv.fx - dx * fv.fy) >> 15;
+    if (zz < 8)
+        return 0;
+    *z = zz;
+    *sx = (FV_W / 2) * 3 + xr * 44 * 3 / zz;
+    *sy = FV_HZ * 3 + (fv.camz - h) * FV_K * 3 / zz;
+    return 1;
+}
+static void fv_enter(void)                              /* from space: high over the planet, coming down */
+{
+    fv.x = fv.y = 0, fv.ang = g.ang & 1023u, fv.alt = 150 << 8, fv.v = 80, fv.thr = 4;
+    fv.down = 0, fv.race = 0, fv.fast_t = 0, fv.gone_n = 0, fv.boom_t = 0;
+    g_set_mode(GM_FLY);
+    g_say("PLANET", "B HELD: LAND");
+}
+static void fv_course(void)                             /* six beams ahead, bending, on land where it can */
+{
+    uint32_t i, a = fv.ang;
+    int32_t x = fv.x >> 8, y = fv.y >> 8;
+    for (i = 0; i < FV_NC; i++) {
+        int32_t k, bx = 0, by = 0;
+        a += (uint32_t)((int32_t)(g_hash((int32_t)i, x, g.pl.seed ^ 0xC0u) % 140u) - 70);
+        for (k = 0; k < 6; k++) {                       /* (the first of six tries that is not the sea) */
+            uint32_t m, b = a + (uint32_t)(k & 1 ? k * 40 : -k * 40);
+            bx = x + ((g_cos(b & 1023u) * 360) >> 15), by = y + ((g_sin(b & 1023u) * 360) >> 15);
+            fv_h(bx, by, &m, 0);
+            if (m > 2u) {
+                a = b;
+                break;
+            }
+        }
+        fv.cx[i] = bx, fv.cy[i] = by, x = bx, y = by;
+    }
+}
+static void fv_race_start(void)
+{
+    uint32_t i;
+    fv_course();
+    for (i = 0; i < FV_NR; i++) {                       /* they come up beside and behind you */
+        int32_t s = (int32_t)(i & 1u) * 2 - 1, back = 10 + (int32_t)i * 14;
+        fv.rx[i] = fv.x + ((g_cos(fv.ang) * -back + g_cos((fv.ang + 256u) & 1023u) * s * 18) >> 7);
+        fv.ry[i] = fv.y + ((g_sin(fv.ang) * -back + g_sin((fv.ang + 256u) & 1023u) * s * 18) >> 7);
+        fv.rv[i] = fv.v, fv.rcp[i] = 0;
+    }
+    fv.race = 1, fv.cp = 0, fv.race_t = fm1_ms, fv.done_t = 0, fv.slow_t = 0;
+    g_say("RACE", "THROUGH THE SIX BEAMS");
+}
+static void fv_blow(int32_t x, int32_t y)              /* landing on (x, y): the trees under it blow to pixels */
+{
+    int32_t i, j, n = 0;
+    for (j = -8; j <= 8; j += 4)
+        for (i = -8; i <= 8; i += 4)
+            if (fv_tree(x + i, y + j) && fv.gone_n < 6u) {
+                fv.gone[fv.gone_n++] = fv_cell(x + i, y + j);
+                n++;
+            }
+    if (!n)
+        return;
+    fv.boom_t = G_STAMP;
+    for (i = 0; i < (int32_t)FV_NB; i++) {
+        uint32_t h = g_hash(i, (int32_t)fm1_ms, 0xB10Du);
+        fv.bit[i].x = (int16_t)((120 + (int32_t)(h % 30u) - 15) << 4), fv.bit[i].y = (int16_t)(196 << 4);
+        fv.bit[i].vx = (int16_t)((int32_t)((h >> 8) % 120u) - 60), fv.bit[i].vy = (int16_t)(-40 - (int32_t)((h >> 16) % 90u));
+        fv.bit[i].c = i % 3 ? GCOL[g.pl.land2 & 7u] : i & 1 ? GCOL[g.pl.land & 7u] : NW;
+    }
+}
+static void fv_b(void)                                  /* B held: land (or from the ground in a race, fly again) */
+{
+    uint32_t m;
+    if (fv.down == 2u) {
+        fv.down = 0;
+        g_say("LIFT OFF", fv.race ? "BACK IN THE RACE" : "");
+        return;
+    }
+    if (fv.down)
+        return;
+    fv_h(fv.x >> 8, fv.y >> 8, &m, 0);
+    if (m <= 2u) {
+        ui_message("WATER: NO LANDING");
+        return;
+    }
+    fv.down = 1, fv.down_t = G_STAMP;
+}
+static void fv_tick(uint32_t dt)
+{
+    uint32_t m, i, now = fm1_ms;
+    int32_t top = 50 + g_spd() * 4 + fv.thr * 10 + (g_down(0) ? 70 : 0), h, want, gh;
+    if (fv.down == 2u)
+        fv.v = 0;                                       /* (on the ground: still) */
+    else if (fv.down)
+        fv.v -= fv.v * (int32_t)dt / 250;
+    else
+        fv.v += (top - fv.v) * (int32_t)dt / 700;
+    fv.x += (g_cos(fv.ang) >> 7) * fv.v * (int32_t)dt / 1000;
+    fv.y += (g_sin(fv.ang) >> 7) * fv.v * (int32_t)dt / 1000;
+    gh = fv_h(fv.x >> 8, fv.y >> 8, &m, 0);
+    h = fv_h((fv.x >> 8) + ((g_cos(fv.ang) * 24) >> 15), (fv.y >> 8) + ((g_sin(fv.ang) * 24) >> 15), &m, 0);   /* (and ahead) */
+    want = ((h > gh ? h : gh) + 9) << 8;
+    if (fv.down)
+        want = (gh + 1) << 8;
+    fv.alt += (want - fv.alt) * (int32_t)dt / (fv.down ? 260 : 240);
+    if (fv.alt < (gh + 1) << 8)
+        fv.alt = (gh + 1) << 8;
+    if (fv.down == 1u && now - fv.down_t > 1100u) {     /* down: the trees go, then you walk (in a race: you wait) */
+        fv.down = 2, fv.down_t = now;
+        fv_blow(fv.x >> 8, fv.y >> 8);
+    }
+    if (fv.down == 2u && !fv.race && now - fv.down_t > 900u) {
+        g.lx = fv.x >> 8, g.ly = fv.y >> 8;
+        g.px = g.tx = (g.lx + 10) << 8, g.py = g.ty = (g.ly + 4) << 8;
+        g.nx = (int16_t)(g.lx + 36), g.ny = (int16_t)(g.ly - 6), g.talk_t = 0;
+        g_sen_init();
+        g.dirty = 1;
+        g_set_mode(GM_SURF);
+        return;
+    }
+    fv.fx = g_cos(fv.ang), fv.fy = g_sin(fv.ang);       /* the camera: behind and over you */
+    fv.camx = (fv.x >> 8) - ((fv.fx * 22) >> 15), fv.camy = (fv.y >> 8) - ((fv.fy * 22) >> 15);
+    fv.camz = (fv.alt >> 8) + 11;
+    gh = fv_h(fv.camx, fv.camy, &m, 0);
+    if (fv.camz < gh + 4)
+        fv.camz = gh + 4;
+    if (!fv.race) {                                     /* fast for a while: the race */
+        if (!fv.down && (fv.thr >= 9 || g_down(0))) {
+            if (!fv.fast_t)
+                fv.fast_t = now;
+            else if (now - fv.fast_t > 1500u)
+                fv_race_start();
+        } else
+            fv.fast_t = 0;
+    } else {
+        int32_t d;
+        for (i = 0; i < FV_NR; i++) {                   /* the others: beam to beam, each its pace */
+            int32_t dx, dy, pace = top * (88 + (int32_t)(g_hash((int32_t)i, 7, g.pl.seed) % 24u)) / 100;
+            if (fv.rcp[i] >= FV_NC)
+                continue;
+            dx = fv.cx[fv.rcp[i]] - (fv.rx[i] >> 8), dy = fv.cy[fv.rcp[i]] - (fv.ry[i] >> 8), d = g_isqrt(dx * dx + dy * dy);
+            fv.rv[i] += (pace - fv.rv[i]) * (int32_t)dt / 900;
+            if (d < 20)
+                fv.rcp[i]++;
+            else
+                fv.rx[i] += (dx << 8) / d * fv.rv[i] * (int32_t)dt / 1000, fv.ry[i] += (dy << 8) / d * fv.rv[i] * (int32_t)dt / 1000;
+        }
+        if (fv.cp < FV_NC && !fv.done_t) {
+            int32_t dx = fv.cx[fv.cp] - (fv.x >> 8), dy = fv.cy[fv.cp] - (fv.y >> 8);
+            if (!fv.down) {                             /* it flies itself to the next beam (KNOB 1 still nudges) */
+                int32_t da = (int32_t)((g_atan2(dy, dx) - fv.ang + 1536u) & 1023u) - 512;
+                fv.ang = (fv.ang + (uint32_t)(da * (int32_t)dt / 400)) & 1023u;
+            }
+            if (dx * dx + dy * dy < 40 * 40) {
+                fv.cp++;
+                if (fv.cp >= FV_NC) {                   /* through the last: your place */
+                    fv.place = 1;
+                    for (i = 0; i < FV_NR; i++)
+                        fv.place = (uint8_t)(fv.place + (fv.rcp[i] >= FV_NC));
+                    fv.done_t = now;
+                    g.cred = (uint16_t)(g.cred + (fv.place == 1u ? 60u : fv.place == 2u ? 30u : 10u));
+                    g.dirty = 1;
+                    g_say(fv.place == 1u ? "YOU WON" : "FINISHED", "CREDITS WON");
+                }
+            }
+        }
+        if (!fv.done_t && fv.thr <= 2 && !g_down(0) && !fv.down) {   /* slowed right down: out of it */
+            if (!fv.slow_t)
+                fv.slow_t = now;
+            else if (now - fv.slow_t > 4000u)
+                fv.done_t = now, fv.place = 0, g_say("RACE", "LEFT IT");
+        } else
+            fv.slow_t = 0;
+        if (fv.done_t && now - fv.done_t > 3000u)
+            fv.race = 0, fv.fast_t = 0;
+    }
+    for (i = 0; i < FV_NB; i++)                         /* the tree's pixels: up, out and down */
+        fv.bit[i].x = (int16_t)(fv.bit[i].x + fv.bit[i].vx * (int32_t)dt / 60), fv.bit[i].y = (int16_t)(fv.bit[i].y + fv.bit[i].vy * (int32_t)dt / 60),
+        fv.bit[i].vy = (int16_t)(fv.bit[i].vy + (int32_t)dt / 4);
+    if (!g_overlay)
+        fv_render();
+}
+static void fv_draw(int32_t y0, int32_t y1)
+{
+    int32_t x, y, sx, sy, z;
+    uint32_t i, now = fm1_ms;
+    uint16_t wc = GCOL[g.pl.water & 7u];
+    for (y = y0 / 3; y * 3 < y1 && y < FV_H; y++)       /* the view, its sky: the air at the bottom, stars up high */
+        for (x = 0; x < FV_W; x++) {
+            uint32_t m = fv_buf[y * FV_W + x];
+            uint16_t c;
+            if (m)
+                c = fv_col(m, x, y);
+            else {
+                int32_t t = y * 16 / FV_HZ;
+                c = (int32_t)BAYER[y & 3][x & 3] < t - 4 ? (t > 13 ? wc : NP) : (g_hash(x, y, g.pl.seed) & 63u) == 0u ? NW : NK;
+            }
+            cv_rect(x * 3, y * 3, 3, 3, c);
+        }
+    if (fv.race && !fv.done_t)                          /* the beams: the next one bright, the far ones first */
+        for (i = FV_NC; i-- > fv.cp;) {
+            uint32_t m;
+            int32_t g0 = fv_h(fv.cx[i], fv.cy[i], &m, 0), tx, ty, w;
+            if (!fv_proj(fv.cx[i], fv.cy[i], g0, &sx, &sy, &z) || !fv_proj(fv.cx[i], fv.cy[i], g0 + 60, &tx, &ty, &z))
+                continue;
+            w = 3 + 600 / z;
+            for (y = ty; y < sy; y++)
+                for (x = sx - w; x <= sx + w; x++)
+                    if ((x + y) & 1 || i == fv.cp)
+                        cv_pset(x, y, i == fv.cp ? (((y + (int32_t)(now / 30u)) & 7) < 2 ? NW : EY) : NP);
+        }
+    if (fv.race)                                        /* the others, the far ones first (as they come) */
+        for (i = 0; i < FV_NR; i++) {
+            uint32_t m;
+            int32_t rx = fv.rx[i] >> 8, ry = fv.ry[i] >> 8;
+            if (fv_proj(rx, ry, fv_h(rx, ry, &m, 0) + 9, &sx, &sy, &z) && sy < 236 && sx > -20 && sx < 260)
+                g_ship_tint(sx, sy, 3 + 520 / z, FV_COL[i][0], FV_COL[i][1]);
+        }
+    {   /* you: coming down you grow, and your shadow under you */
+        int32_t q = fv.down == 1u ? (int32_t)(now - fv.down_t) * 256 / 1100 : fv.down ? 256 : 0, L = 24 + q * 14 / 256;
+        int32_t cy = 150 + q * 40 / 256, j2, f = (int32_t)((now / 50u) % 3u);
+        if (q > 256)
+            q = 256;
+        if (fv.down != 2u)
+            for (j2 = -1; j2 <= 1; j2 += 2) {           /* the jets */
+                int32_t ex = 120 + j2 * L * 9 / 24, r = 1 + fv.v / 60 + (f == 1);
+                cv_rect(ex - r, cy + L / 3, 2 * r + 1, 3 + fv.v / 30 + f, ((now / 40u) & 1u) ? NB : NW);
+            }
+        cv_rect(120 - L / 2 + q / 16, cy + L / 2 + 10 - q * 8 / 256, L - q / 8, 3, NK);   /* the shadow */
+        g_ship_px(120, cy, 0, L, 0);
+    }
+    if (now - fv.boom_t < 1400u)                        /* a tree blown */
+        for (i = 0; i < FV_NB; i++)
+            cv_rect(fv.bit[i].x >> 4, fv.bit[i].y >> 4, 2, 2, fv.bit[i].c);
+    {   /* the speed; in a race the beam, the time */
+        char t[16];
+        fmt_int(t, fv.v / 3);
+        str_cpy(t + str_len(t), " U/S", 5);
+        n_texto(236 - n_w(t, 1), 200, t, 1, g_down(0) ? EY : NW);
+        if (fv.race && !fv.done_t) {
+            uint32_t s = (now - fv.race_t) / 100u;
+            str_cpy(t, "BEAM ", 6), fmt_int(t + 5, (int32_t)fv.cp + 1), str_cpy(t + str_len(t), "/6", 3);
+            n_texto(4, 40, t, 1, EY);
+            fmt_int(t, (int32_t)(s / 10u)), str_cpy(t + str_len(t), ".", 2), t[str_len(t) + 1] = 0, t[str_len(t)] = (char)('0' + s % 10u);
+            n_texto(4, 56, t, 1, NW);
+        } else if (fv.race && fv.place) {
+            static const char *const P[5] = {"1ST", "2ND", "3RD", "4TH", "5TH"};
+            n_texto(120 - n_w(P[(fv.place - 1u) % 5u], 3) / 2, 80, P[(fv.place - 1u) % 5u], 3, fv.place == 1u ? EY : NW);
+        } else if (fv.down == 2u && fv.race)
+            n_texto(120 - n_w("B: FLY", 1) / 2, 80, "B: FLY", 1, NW);
+        else if (!fv.race && fv.fast_t)
+            n_texto(120 - n_w("FASTER...", 1) / 2, 80, "FASTER...", 1, EY);
+    }
 }
 static void bt_draw(int32_t y0, int32_t y1)
 {
@@ -4013,7 +4224,7 @@ static void bt_draw(int32_t y0, int32_t y1)
             cv_line(bt_zl[i].x0, bt_zl[i].y0, bt_zl[i].x1, bt_zl[i].y1, now - bt_zl[i].t < 80u ? NW : RGB(0x90, 0xA0, 0xC0));
             cv_rect(bt_zl[i].x1 - 1, bt_zl[i].y1 - 1, 3, 3, NW);
         }
-    if (bt_wings() > 0) {                               /* (the user) more keys: a big laser weaving up from you */
+    if (bt_wings() > 0) {                               /* more keys: a big laser weaving up from you */
         int32_t yy;
         for (yy = BT_Y - 12; yy > 20; yy -= 2) {
             int32_t wx = px + ((g_sin((uint32_t)(yy * 9 + (int32_t)(now / 3u)) & 1023u) * 7) >> 15);
@@ -4038,16 +4249,16 @@ static void bt_draw(int32_t y0, int32_t y1)
 }
 
 /* ------------------------------------------------------- the fight in space --- */
-/* (the user) KNOB 3 out of the battle: the fight goes on out here, from above. Their little ships (red) chase you and
+/* KNOB 3 out of the battle: the fight goes on out here, from above. Their little ships (red) chase you and
  * fire; two of yours (blue) fly with you, chasing them and firing white lasers; the boss (if it was the boss) comes
  * after you slowly, and your keys fire green lasers at it (else at the nearest of them). Everyone leaves a trail.
  * Fast enough and you leave them all behind; too slow and the little ones keep up */
 #define SF_NA 2u
 #define SF_TR 10u
 #define SF_NB 24u                                       /* the boss's shots */
-#define SF_LIFE 30000u                                  /* (the user) the boss always goes down in 30 s */
+#define SF_LIFE 30000u                                  /* the boss always goes down in 30 s */
 static struct {
-    uint8_t boss, ti, raid_left, noal;                  /* (the user) pirates still to come; no allies of the fight's own */
+    uint8_t boss, ti, raid_left, noal;                  /* pirates still to come; no allies of the fight's own */
     int8_t fhp[G_NSEN];
     uint32_t alert_t;                                   /* the pirates' warning, since */
     int32_t bx, by;                                     /* the boss (Q8 world px) */
@@ -4123,7 +4334,7 @@ static void sf_add(void)                                /* one more of theirs, f
         sf.tr[i][q][0] = (int16_t)(x >> 8), sf.tr[i][q][1] = (int16_t)(y >> 8);
     g.foe_n++;
 }
-static void sf_start(int boss)                          /* (the user) the fight, out in space: the boss too, or not */
+static void sf_start(int boss)                          /* the fight, out in space: the boss too, or not */
 {
     uint32_t q;
     for (q = 0; q < SF_NA; q++)
@@ -4145,7 +4356,7 @@ static void sf_start(int boss)                          /* (the user) the fight,
     }
     sf_on = 1, sf.notes = fm1_in.notes, sf.ti = 0, sf.raid_left = 0, sf.noal = 0;
 }
-/* (the user) pirates come into the system after you: n of them (2 to 6), three at a time, the rest once those are down;
+/* pirates come into the system after you: n of them (2 to 6), three at a time, the rest once those are down;
  * a warning on the screen. Your escorts (held keys) fight with you */
 static void sf_raid(uint32_t n)
 {
@@ -4229,7 +4440,7 @@ static void sf_tick(uint32_t dt)
                 sf.fhp[0] = 1, sf_hit(0);
         }
     }
-    if (sf.boss && !sf.bdie && g.foe_n < 3u && (int32_t)(now - sf.spawn) >= 0)   /* (the user) new ones keep coming */
+    if (sf.boss && !sf.bdie && g.foe_n < 3u && (int32_t)(now - sf.spawn) >= 0)   /* new ones keep coming */
         sf_add(), sf.spawn = now + 2600u;
     for (i = 0; i < SF_NB; i++) {                       /* its shots: 2.4 s each; one on you hurts */
         int32_t dx, dy;
@@ -4284,7 +4495,7 @@ static void sf_tick(uint32_t dt)
         for (i = 0; i < SF_NA; i++)
             sf.tr[G_NSEN + i][q][0] = (int16_t)(sf.al[i].x >> 8), sf.tr[G_NSEN + i][q][1] = (int16_t)(sf.al[i].y >> 8);
     }
-    if (!g.foe_n && !sf.boss && sf.raid_left) {         /* (the user) the first three down: the rest of them come */
+    if (!g.foe_n && !sf.boss && sf.raid_left) {         /* the first three down: the rest of them come */
         uint32_t k;
         for (k = 0; k < sf.raid_left && k < 3u; k++)
             sf_add();
@@ -4350,7 +4561,7 @@ static void sf_draw(void)
             for (k = 0; k < 8u; k++)
                 gp(x + ((g_cos(k * 128u + i * 40u) * r) >> 15), y + ((g_sin(k * 128u + i * 40u) * r) >> 15), r < 8 ? EY : r < 12 ? NO : ER);
         }
-    if (sf.alert_t && now - sf.alert_t < 2600u && ((now / 180u) & 1u)) {   /* (the user) the pirates' warning */
+    if (sf.alert_t && now - sf.alert_t < 2600u && ((now / 180u) & 1u)) {   /* the pirates' warning */
         cv_rect(40, 44, 160, 22, NK), n_frame(40, 44, 160, 22, 2, ER);
         n_texto(120 - n_w("! PIRATES !", 1) / 2, 47, "! PIRATES !", 1, ER);
     }
@@ -4367,13 +4578,13 @@ static void sf_draw(void)
     }
 }
 
-/* (the user) out in space: hold keys and little ships of yours come, one a key held (up to four), and stay 5 s after
+/* out in space: hold keys and little ships of yours come, one a key held (up to four), and stay 5 s after
  * you let go. With nobody about they wander round you; with ships of theirs about they hunt them (the nearest each),
  * firing on their own; their trail a long white line, always. Every key struck fires too: yours white, at the big one
  * if there is one (the fight's own), else at the nearest in sight; theirs white, yellow, blue */
 #define ES_N 4u
 static struct { int32_t x, y, vx, vy; uint32_t keep, shot; uint8_t on; } es[ES_N];   /* on: flying; keep: last wanted */
-#define ES_TR 32u                                       /* (the user) their trails: long */
+#define ES_TR 32u                                       /* their trails: long */
 static int16_t es_tr[ES_N][ES_TR][2];
 static uint8_t es_ti;
 static uint32_t es_tt, es_notes;
@@ -4451,19 +4662,19 @@ static void es_draw(void)
         int32_t vx = es[i].vx >> 8, vy = es[i].vy >> 8, v, dx, dy;
         if (!es[i].on)
             continue;
-        for (k = 1; k < ES_TR; k++) {                   /* its trail: (the user) long and bright: white near, cyan, blue
+        for (k = 1; k < ES_TR; k++) {                   /* its trail: long and bright: white near, cyan, blue
                                                          * far; two pixels wide where it is new */
             uint32_t a = (es_ti + k) % ES_TR, b = (es_ti + k - 1u) % ES_TR;
             g_w2s(es_tr[i][a][0], es_tr[i][a][1], &x, &y), g_w2s(es_tr[i][b][0], es_tr[i][b][1], &x1, &y1);
             if ((x - x1) * (x - x1) + (y - y1) * (y - y1) < 900)
-                gline(x, y, x1, y1, NW);                /* (the user) a white line, always */
+                gline(x, y, x1, y1, NW);                /* a white line, always */
         }
         g_w2s(es[i].x >> 8, es[i].y >> 8, &x, &y);
         v = g_isqrt(vx * vx + vy * vy);
         if (v < 4)
             vx = g_cos(g.ang) >> 10, vy = g_sin(g.ang) >> 10, v = g_isqrt(vx * vx + vy * vy);
         v++;
-        for (dy = -2; dy <= 2; dy++)                    /* (the user) small and white: an arrow along its way */
+        for (dy = -2; dy <= 2; dy++)                    /* small and white: an arrow along its way */
             for (dx = -2; dx <= 2; dx++) {
                 int32_t u = (dx * vx + dy * vy) * 4 / v, w = (-dx * vy + dy * vx) * 4 / v;
                 w = w < 0 ? -w : w;
@@ -4488,7 +4699,7 @@ static void es_draw(void)
  * among them; the system's name on top, how far the core is under it. Drawn in screen px into the band (cv_oy set) */
 #define SV_X 120
 #define SV_Y 140
-/* (the user) the system view opens over the screen like a projection: from small and see-through (KNOB 3 past the
+/* the system view opens over the screen like a projection: from small and see-through (KNOB 3 past the
  * widest) to its size, solid. sv_k its scale (Q8, round its middle), sv_a how much of each pixel shows (of 16) */
 static int32_t sv_k = 256, sv_a = 16;
 static void svp(int32_t x, int32_t y, uint16_t c)
@@ -4674,8 +4885,12 @@ static void g_action(void)
         g_dock_do();
         return;
     }
+    if (g.mode == GM_FLY) {
+        fv_b();
+        return;
+    }
     if (g.mode == GM_SPACE && g.fr_t && !g.fr_ev && fm1_ms - g.fr_t > 500u && fm1_ms - g.fr_t < 8500u) {
-        /* (the user) a ship going by: OCT+ hails it first (before a planet): a gift, a trade, or a call for help */
+        /* a ship going by: OCT+ hails it first (before a planet): a gift, a trade, or a call for help */
         uint32_t k = (g.fr_t >> 4) & 3u;
         g.fr_ev = (uint8_t)(1u + (g.fr_t / 331u) % 3u), g.fr_e0 = fm1_ms;
         if (g.fr_ev == 1u)
@@ -4689,16 +4904,15 @@ static void g_action(void)
         g.dirty = 1;
         return;
     }
+    if (g.mode == GM_SPACE && g_ev_near()) {           /* the race ship: race it */
+        ev.t = 0, ev.next = fm1_ms + 90000u;
+        g.thr = 0, g.vx = g.vy = 0, rc_space = 1;
+        g_race_start();
+        return;
+    }
     if (g.mode == GM_SPACE) {
         planet_t p;
         int32_t a, b, cx = g.sx >> 8, cy = g.sy >> 8, sx = g_sector(cx), sy = g_sector(cy), x, y;
-        for (a = sx - 1; a <= sx + 1; a++)
-            for (b = sy - 1; b <= sy + 1; b++)
-                if (g_gate_at(a, b, &x, &y) && (x - cx) * (x - cx) + (y - cy) * (y - cy) < 20 * 20) {   /* a race gate */
-                    g.thr = 0, g.vx = g.vy = 0, rc_space = 1;
-                    g_race_start();
-                    return;
-                }
         for (a = sx - 1; a <= sx + 1; a++)
             for (b = sy - 1; b <= sy + 1; b++)
                 if (g_station(a, b, &x, &y) && (x - cx) * (x - cx) + (y - cy) * (y - cy) < 26 * 26) {   /* dock */
@@ -4793,6 +5007,7 @@ static void g_knob(uint32_t k, int32_t s)               /* ui_input.c: KNOB 1..4
         g_set_mode(g.after);
         return;
     }
+    g_ks_t = fm1_ms | 1u, g_ks_k = (uint8_t)k;
     if (g.mode == GM_MAP) {                             /* the map: KNOB 1 / 2 move the cursor, a sector a detent */
         int32_t sx = g_sector(g.sx >> 8), sy = g_sector(g.sy >> 8);
         if (k == 0u)
@@ -4818,8 +5033,8 @@ static void g_knob(uint32_t k, int32_t s)               /* ui_input.c: KNOB 1..4
     }
     if (g.mode == GM_WARP)
         return;
-    if (g.mode == GM_BATTLE && k == 2u && s < 0) {      /* (the user) KNOB 3 out: away from the fight */
-        bt.on = 0, g_set_mode(GM_SPACE);                /* (the user) the fight goes on out here */
+    if (g.mode == GM_BATTLE && k == 2u && s < 0) {      /* KNOB 3 out: away from the fight */
+        bt.on = 0, g_set_mode(GM_SPACE);                /* the fight goes on out here */
         sf_start(1);
         g.z = 2;
         g_say("OUT IN SPACE", "FIGHT OR RUN");
@@ -4833,6 +5048,17 @@ static void g_knob(uint32_t k, int32_t s)               /* ui_input.c: KNOB 1..4
         g_say("RACE", "GAVE UP");
         return;
     }
+    if (g.mode == GM_FLY) {                             /* over a planet: KNOB 1 turns, KNOB 2 the speed, KNOB 3 out: space */
+        if (k == 0u && fv.down != 1u)
+            fv.ang = (fv.ang + (uint32_t)(s * 10)) & 1023u, g.ang = fv.ang;
+        else if (k == 1u)
+            fv.thr = (int8_t)clamp(fv.thr + s, 0, 10);
+        else if (k == 2u && s < 0) {
+            g.lx = fv.x >> 8, g.ly = fv.y >> 8, g.px = g.lx << 8, g.py = g.ly << 8;
+            g_set_mode(GM_TAKEOFF);
+        }
+        return;
+    }
     if (g.mode == GM_RACE) {                            /* the race: KNOB 1 steers, KNOB 2 the speed */
         if (k == 0u)
             rc.lane = clamp(rc.lane + s * 8, -110, 110);
@@ -4843,7 +5069,7 @@ static void g_knob(uint32_t k, int32_t s)               /* ui_input.c: KNOB 1..4
     if (k == 2u) {                                      /* KNOB 3: the pixel size */
         {   /* (in space a fourth step, 5: the close-up, the ship from above, big) */
             int32_t was = g.z;
-            if (g.mode == GM_SPACE && g.z == 2 && s < 0) {   /* (the user) past the widest: a charge, the lines growing;
+            if (g.mode == GM_SPACE && g.z == 2 && s < 0) {   /* past the widest: a charge, the lines growing;
                                                          * let go before it is full and it falls back */
                 g.zc = (int16_t)(g.zc + 56), g.zc_t = fm1_ms;
                 if (g.zc >= 256)
@@ -5019,7 +5245,7 @@ static void g_close_planet(void)
 }
 static void g_close_draw(void)
 {
-    static const uint16_t COL[3][6] = {{NP, NB, EN, NP, NB, NO}, {NB, NG, NP, NO, EG, NB}, {NW, EY, NB, EG, NB, NW}};   /* (the user: no red streak, it read as a shot) */
+    static const uint16_t COL[3][6] = {{NP, NB, EN, NP, NB, NO}, {NB, NG, NP, NO, EG, NB}, {NW, EY, NB, EG, NB, NW}};   /* (no red streak, it read as a shot) */
     static const int32_t DEPTH[3] = {2, 4, 8};          /* the camera's move, times (close: the stars rush by) */
     int32_t speed = g_isqrt((g.vx >> 8) * (g.vx >> 8) + (g.vy >> 8) * (g.vy >> 8)), l, i;
     int32_t ux = 0, uy = 0;                              /* (the direction of travel, Q8) */
@@ -5058,7 +5284,7 @@ static void g_close_draw(void)
                 cv_pset(sx + bx * k / 256 + (i % 3) - 1, sy + by * k / 256, k < len / 3 ? EY : k < len * 2 / 3 ? NO : ((k & 1) ? ER : NK));
         }
     }
-    {   /* (the user) near its sun: the sun behind, big */
+    {   /* near its sun: the sun behind, big */
         int32_t ux, uy, dx, dy, sxs = g_sector(g.sx >> 8), sys2 = g_sector(g.sy >> 8);
         g_sun_at(sxs, sys2, &ux, &uy);
         dx = ux - (g.sx >> 8), dy = uy - (g.sy >> 8);
@@ -5133,7 +5359,7 @@ static void g_cabin_draw(void)
                     best = dot, bp = p, bx = G_CB_VX + side * 110 / dot, by = G_CB_VY + 900 / dot, br = G_PR(p) * 110 / dot;
                 }
             }
-        {   /* (the user: no blinking) the one ahead grows in, eased (fast, then soft); another one: the first shrinks out,
+        {   /* (no blinking) the one ahead grows in, eased (fast, then soft); another one: the first shrinks out,
              * then the new one grows; its place glides */
             static planet_t cbp;
             static int32_t cbx, cby, cbr, cbs;          /* cbr: its radius, cbs: how much of it shown, Q8 */
@@ -5215,7 +5441,7 @@ static void g_tune_tick(int32_t t)                      /* t: ms into the openin
     if (t < 0 || g_tune_on == 0xFFFFFFFFu)
         return;
     fm1_irq_off();
-    if (g_tune_rev < 0) {                               /* (the user) heard whatever the project did to track 2 */
+    if (g_tune_rev < 0) {                               /* heard whatever the project did to track 2 */
         g_tune_rev = trk[1].p[P_REV], g_tune_lv = trk[1].p[P_LEVEL], g_tune_mu = trk[1].p[P_MUTE];
         trk[1].p[P_REV] = 110, trk[1].p[P_LEVEL] = 104, trk[1].p[P_MUTE] = 0;
     }
@@ -5251,6 +5477,44 @@ static void g_help_draw(void)
         n_texto(120 - n_w("ANY BUTTON", 1) / 2, 184, "ANY BUTTON", 1, EG);
 }
 
+/* a knob turned on HOME: a strip at the bottom says what the 4 knobs do here, the one turned lit; 2 s */
+static const char *g_ks_name(uint32_t k)
+{
+    static const char *const SP[4] = {"TURN", "SPEED", "ZOOM", "VOLUME"}, *const SU[4] = {"WALK X", "WALK Y", "ZOOM", "VOLUME"};
+    static const char *const MP[4] = {"X", "Y", "ZOOM", "VOLUME"}, *const RC[4] = {"STEER", "SPEED", "EXIT", "VOLUME"};
+    if (g.mode == GM_SPACE)
+        return SP[k];
+    if (g.mode == GM_SURF)
+        return SU[k];
+    if (g.mode == GM_MAP)
+        return MP[k];
+    if (g.mode == GM_RACE || g.mode == GM_FLY)
+        return RC[k];
+    if (g.mode == GM_BATTLE)
+        return k == 2u ? "EXIT" : k == 3u ? "VOLUME" : "";
+    if (g.mode == GM_DOCK)
+        return k == 0u ? "ROW" : k == 1u ? (g.row == 4 ? "TURN" : "ROW") : "";
+    return "";
+}
+static void g_ks_draw(void)
+{
+    uint32_t age = fm1_ms - g_ks_t, k;
+    int32_t y;
+    if (age >= 2000u || !g_ks_name(0)[0] && !g_ks_name(2)[0]) {
+        g_ks_t = 0;
+        return;
+    }
+    y = 214 + (age < 120u ? (int32_t)(120u - age) * 26 / 120 : age > 1800u ? (int32_t)(age - 1800u) * 26 / 200 : 0);   /* (up, down) */
+    for (k = 0; k < 4u; k++) {
+        const char *s = g_ks_name(k);
+        int32_t x = (int32_t)k * 60;
+        cv_rect(x, y, 60, 26, NK);
+        cv_rect(x + 1, y, 58, k == g_ks_k ? 3 : 1, NCOL[k]);
+        if (s[0])
+            n_texto(x + 30 - n_w(s, 1) / 2, y + 7, s, 1, k == g_ks_k ? NW : NP);
+    }
+}
+
 static uint32_t gs_el, gs_view, gs_frame_done;
 static int32_t gs_arrive, gs_arr_v;
 /* the game a frame on (once a frame: n_home, or under a screen over it): the step, the fade, the camera */
@@ -5277,10 +5541,10 @@ static void g_step(void)
     g.t_last = now;
     g.frame++;
     el = now - g.t_mode;
-    if (g.z < 2 && g.mode != GM_SPACE && g.mode != GM_MAP && g.mode != GM_DOCK && g.mode != GM_BATTLE && g.mode != GM_RACE)
+    if (g.z < 2 && g.mode != GM_SPACE && g.mode != GM_MAP && g.mode != GM_DOCK && g.mode != GM_BATTLE && g.mode != GM_RACE && g.mode != GM_FLY)
         g.z = 2;                                        /* (the system view is for space) */
-    gz = g.mode == GM_MAP || g.mode == GM_DOCK || g.mode == GM_BATTLE || g.mode == GM_RACE || g.z > 4 || g.z < 2 ? 1 : g.z, gw = 240 / gz, gh = 240 / gz;   /* (the close-up: px) */
-    if (g.z > 4 && g.mode != GM_SPACE && g.mode != GM_INTRO)
+    gz = g.mode == GM_MAP || g.mode == GM_DOCK || g.mode == GM_BATTLE || g.mode == GM_RACE || g.mode == GM_FLY || g.z > 4 || g.z < 2 ? 1 : g.z, gw = 240 / gz, gh = 240 / gz;   /* (the close-up: px) */
+    if (g.z > 4 && g.mode != GM_SPACE && g.mode != GM_INTRO && g.mode != GM_FLY)
         gz = 4, gw = gh = 60;                           /* (out of space it is the closest pixel) */
     /* the step */
     if (g.mode == GM_INTRO && el > G_LOGO_END + G_ARRIVE_MS) {       /* the opening over: playing (already faded in) */
@@ -5323,16 +5587,16 @@ static void g_step(void)
     if (g.mode == GM_LAND && el > 1500u) {
         g_land_place();
         g.dirty = 1;
-        g_set_mode(GM_SURF), el = 0;
-        if (g_race_here(&g.pl))                         /* (the user) a race planet: the race */
-            g_race_start();
+        fv_enter(), el = 0;                             /* into the planet, flying */
     }
     if (g.mode == GM_RACE)
         rc_tick(dt);
+    if (g.mode == GM_FLY)
+        fv_tick(dt);
     g_npc_tick();
     if (g.fr_ev && now - g.fr_e0 > 4500u)               /* (the hail over: it flies on) */
         g.fr_t += now - g.fr_e0, g.fr_ev = 0;
-    {   /* (the user) pirates: a raid now and then (the first a minute in, then every 1.5 to 2.5 min), 2 to 6 of them */
+    {   /* pirates: a raid now and then (the first a minute in, then every 1.5 to 2.5 min), 2 to 6 of them */
         static uint32_t pir_next;
         if (g.mode == GM_SPACE && !sf_on && !g.foe_n && !g.fr_ev) {
             if (!pir_next)
@@ -5341,6 +5605,8 @@ static void g_step(void)
                 sf_raid(2u + g_hash((int32_t)now, 3, 0x9124u) % 5u), pir_next = now + 90000u + g_hash((int32_t)now, 4, 0x9125u) % 60000u;
         }
     }
+    if (g.mode == GM_SPACE && !sf_on && !g.foe_n)
+        g_ev_tick();
     if (g.mode == GM_SPACE && !g.foe_n && !g.fr_ev && (!g.fr_t || now - g.fr_t > 45000u))   /* a ship by, every 45 s */
         g.fr_t = now;
     if (g.mode == GM_TAKEOFF && el > G_TO_MS) {
@@ -5353,8 +5619,8 @@ static void g_step(void)
             g.z = g.space_z;                            /* (the zoom you had before landing) */
         g_set_mode(GM_SPACE), el = 0;
         g_foes_start();
-        if (g.foe_n)                                    /* (the user) they follow you up: the battle */
-            sf_start(1);                                /* (the user) the fight out in space, the boss too */
+        if (g.foe_n)                                    /* they follow you up: the battle */
+            sf_start(1);                                /* the fight out in space, the boss too */
     }
     if (g.mode == GM_BATTLE) {
         if (bt.on)
@@ -5423,10 +5689,9 @@ static void g_band(int32_t ytop, int32_t hh, int hud)
     } else if (g.mode == GM_BATTLE) {
         bt_draw(ytop, ytop + hh);
     } else if (g.mode == GM_RACE) {
-        if (rc_space)
-            rc_draw_space(ytop, ytop + hh);
-        else
-            rc_draw(ytop, ytop + hh);
+        rc_draw(ytop, ytop + hh);
+    } else if (g.mode == GM_FLY) {
+        fv_draw(ytop, ytop + hh);
     } else if (view == GM_SPACE && g.z < 2 && g.mode == GM_SPACE) {
         g_nebula(y0, y1);                           /* the system, from far above */
         {                                           /* just in: it opens the last bit, easing */
@@ -5490,8 +5755,7 @@ static void g_band(int32_t ytop, int32_t hh, int hud)
         g_nebula(y0, y1);
         g_stars(y0, y1);
         g_globe(vx, vy, lz, &g.pl, now / 40u + (g.pl.seed & 255u), y0, y1);
-        if (el < 900u)
-            g_ship(gw / 2, gh / 2, g.ang + el / 4u, 0, 1);
+        g_ship(gw / 2, gh / 2, g.ang + el / 4u, 1, el < 1000u ? 3 : 2);   /* (big, to be seen going down) */
     } else {                                        /* surface (and the take-off from it) */
         int32_t lx = g.lx - gcx + gw / 2, ly = g.ly - gcy + gh / 2;
         g_surface(y0, y1);
@@ -5520,17 +5784,76 @@ static void g_band(int32_t ytop, int32_t hh, int hud)
         g_hud();
         g_npc_talk_draw();
         g_radio_draw();
+        g_ev_draw();
         if (g.mode != GM_MAP && g.mode != GM_DOCK)
             g_say_draw();
         if (g_help_t && g.mode == GM_SPACE)
             g_help_draw();
+        else if (g_ks_t)
+            g_ks_draw();
         cv_oy = 0;
     }
 }
 /* a screen over the game (cv_backdrop, gfx.c): its scene under the band, without the head */
+/* (every screen over the game must stay smooth) the game is not drawn again under them: a small copy of it, 48 x 48
+ * in 5 x 5 px blocks and 8 bit colour, taken as the game is drawn and, under a screen, a band now and then (g_snap_roll) */
+#define GS_N 48
+static uint8_t gs_snap[GS_N * GS_N];
+static void g_snap_take(int32_t y0, int32_t h)          /* from the canvas: rows y0 .. y0 + h of the screen */
+{
+    int32_t j, i;
+    for (j = (y0 + 2) / 5; j < GS_N && j * 5 + 2 < y0 + h; j++)
+        for (i = 0; i < GS_N; i++) {
+            uint32_t c = swap16(cv_px[(uint32_t)(j * 5 + 2 - y0) * cv_w + (uint32_t)i * 5u + 2u]);
+            gs_snap[j * GS_N + i] = (uint8_t)(((c >> 8) & 0xE0u) | ((c >> 6) & 0x1Cu) | ((c >> 3) & 3u));
+        }
+}
+static int g_snap_roll(void)                            /* under a screen: one band of the game now and then; 1: time to show it */
+{
+    static uint32_t t, shown;
+    static int32_t y;
+    int was = g_overlay, wrap;
+    g_overlay = 1;
+    if (!was)
+        shown = fm1_ms;
+    if (fm1_ms - t < 100u)
+        return !was;
+    t = fm1_ms;
+    if (y == 0 && g.mode == GM_FLY)
+        fv_render();
+    cv_begin(240, 30, NK);
+    g_band(y, 30, 0);
+    cv_oy = 0;
+    g_snap_take(y, 30);
+    y = (y + 30) % 240;
+    wrap = y == 0 && fm1_ms - shown > 2500u;            /* (every few seconds: the screen's whole area goes to the LCD only then) */
+    if (wrap)
+        shown = fm1_ms;
+    return wrap || !was;
+}
+/* the copy under the canvas (y: its top on the screen), where the key still is and where the mesh lets it: from of 16 */
+static void g_snap_under(int32_t y, int32_t x, uint32_t from, uint16_t key)
+{
+    uint32_t i, j;
+    for (j = 0; j < cv_h; j++) {
+        uint32_t sy = (uint32_t)y + j, row = sy / 5u * GS_N;
+        const uint8_t *bay = CV_BAY[sy & 3u];
+        uint16_t *px = &cv_px[j * cv_w];
+        if (sy >= 240u)
+            break;
+        for (i = 0; i < cv_w; i++) {
+            uint32_t sx = (uint32_t)x + i, v;
+            if (px[i] != key || bay[sx & 3u] < from || sx >= 240u)
+                continue;
+            v = gs_snap[row + sx / 5u];
+            px[i] = swap16(CV_DIM((v & 0xE0u) << 8 | (v & 0x1Cu) << 6 | (v & 3u) << 3));
+        }
+    }
+}
 static void g_backdrop(int32_t y, int32_t h)
 {
-    g_band(y, h, 0);
+    (void)h;
+    g_snap_under(y, (int32_t)cv_xleft, CV_MESH, (uint16_t)((CV_KEY >> 8) | (CV_KEY << 8)));
 }
 
 static void g_draw(void)
@@ -5538,10 +5861,12 @@ static void g_draw(void)
     uint32_t half;
     if (!g.inited)
         g_init();
+    g_overlay = 0;
     g_step();
     for (half = 0; half < 2u; half++) {
         cv_begin(240, 120, NK);
         g_band((int32_t)(half * 120u), 120, 1);
+        g_snap_take((int32_t)(half * 120u), 120);       /* (the copy a screen over the game shows) */
         cv_blit(0, half * 120u);
     }
     g_save_tick();

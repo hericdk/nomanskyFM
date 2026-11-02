@@ -3,7 +3,7 @@
 /* Felucca user interface. Four columns map to KNOB 1..4. Rendering is lazy:
  * every element remembers what it last drew and is redrawn only on change. */
 #ifndef FELUCCA_VERSION
-#define FELUCCA_VERSION "NMS FM 0.5"  /* No Man Sky FM: SLOOP 2.7.1, numbers and bars, a game on HOME */
+#define FELUCCA_VERSION "NMS FM 0.9"  /* No Man Sky FM: SLOOP 2.8.4, numbers and bars, a game on HOME */
 #endif
 static void project_save(uint32_t slot);
 static void panel_setup(void);
@@ -11,6 +11,7 @@ static void project_load(uint32_t slot);
 static void project_erase(uint32_t slot);        /* SAVE > PROJECT > ERASE (2.6) */
 static int project_used(uint32_t slot);
 static int up_used(uint32_t k);              /* user presets: upreset.c */
+static int up_arp_of(uint32_t k, int16_t *a);   /* (2.7.1) user preset k's arp, MODE … ORDER: upreset.c */
 static int up_load(uint32_t k);
 static int up_load_to(track_t *t, uint32_t k);
 static uint32_t up_count(void);
@@ -34,6 +35,10 @@ static struct {
     uint8_t bank;                /* SEQ: 16-step bank (follows the cursor) */
     uint8_t cursor;              /* SEQ: step being edited (STEP page KNOB 1 moves it) */
     uint8_t entry_open;          /* SEQ: keys held since the first press of this entry */
+    uint8_t note_k;              /* (2.7.2) NOTES: the note of the cursor's chord (0..n-1) */
+    uint8_t zoom;                /* (2.7.2) NOTES: the steps shown, NV_ZOOM[zoom] (PRESETS) */
+    uint8_t sheet;               /* (2.7.2) NOTES / DRUMS grid: the sheet (OCT+ held) open: 1 + its row; 0 closed */
+    uint8_t sheet_last;          /* (2.8.1) the sheet row last used (0..5): OCT+ reopens on it (quick MOVE) */
     uint8_t hot_col, hot_t;      /* column whose knob was just turned (drawn white) */
     uint8_t menu;                /* 0 off, 1 list, 2 about (HOME held) */
     uint8_t menu_sel;
@@ -182,6 +187,30 @@ UI_SMALL static uint32_t note_set_len(track_t *t, uint32_t i, uint32_t want)
     }
     return n;
 }
+/* ---- (2.8.3) LEN under later notes ----
+ * POLY: a note's LEN runs on under the notes after it: it joins their steps as a note going on (SF_CONT, as a
+ * recording over held notes writes it, seq.c rec_hold), 4 notes a step at most; after them, a NOTE of its notes only,
+ * all going on, carries it (the others end there). A long bass under a melody, programmed. MONO / LEGATO parts play one
+ * note at a time: it stops there and says so. The step format is 2.7's: a project of 2.8.3 opens in 2.7 and later.
+ * The work: seq.c span_len / span_set (a free take uses them too); span_why: why it stopped short */
+UI_SMALL static uint32_t note_span(const track_t *t, uint32_t i)   /* LEN: the steps step i's notes sound */
+{
+    uint8_t s[4];
+    uint32_t ns;
+    if (!step_on(&t->step[i]) || !(ns = span_notes(&t->step[i], s)))
+        return note_len(t, i);
+    return span_len(t, i, s, ns);
+}
+UI_SMALL static uint32_t note_span_set(track_t *t, uint32_t i, uint32_t want)
+{
+    uint8_t s[4];
+    uint32_t ns;
+    span_why = 3;
+    if (!step_on(&t->step[i]) || !(ns = span_notes(&t->step[i], s)))
+        return note_set_len(t, i, want);
+    return span_set(t, i, s, ns, want);
+}
+
 /* a synth step's velocity as it plays (seq.c step_vel: ACC 127, else its VEL, 96 when 0, through its first note's level) */
 UI_SMALL static uint32_t step_vel_shown(const step_t *st)
 {
@@ -237,12 +266,204 @@ UI_SMALL static void cursor_set(int32_t c)
     ui.cursor = (uint8_t)((c % len + len) % len);
     ui.bank = (uint8_t)(ui.cursor / 16u);
     ui.entry_open = 0;
+    ui.note_k = 0;
 }
 
 UI_SMALL static void cursor_fix(void)                           /* LEN got shorter: onto the last step */
 {
     if (ui.cursor >= (uint32_t)TSEL->p[P_SLEN])
         cursor_set(TSEL->p[P_SLEN] - 1);
+    if (ui.note_k && ui.note_k >= TSEL->step[ui.cursor].n)
+        ui.note_k = (uint8_t)(TSEL->step[ui.cursor].n ? TSEL->step[ui.cursor].n - 1u : 0u);
+}
+
+/* ---- SLOOP 2.7.2: SEQ > NOTES, the synth tracks' note editor (after Melodee's NOTES page, keremimo, GPL-3.0: the
+ * idea, not its code; SLOOP keeps its steps). The note under edit: step ui.cursor, note ui.note_k of its chord. KNOB 1
+ * walks the notes (a chord's one by one) and the empty steps; a note's TIEs are its length, not stops. KNOB 2 its
+ * pitch, KNOB 3 its length (note_set_len), KNOB 4 its FORCE, PRESETS the zoom; OCT+ held its sheet (SLIDE, NUDGE,
+ * FILL, MOVE, COPY, DELETE). The drum grid (ui_studio.c) has the same sheet for a hit */
+static const uint8_t NV_ZOOM[4] = {8, 16, 32, 64};
+static const char *const FORCE_N[5] = {"GHOST", "SOFT", "NORM", "HARD", "ACC"};
+static const uint8_t F_LVL[4] = {LV_GHOST, LV_SOFT, LV_NORM, LV_HARD};
+static const char *const SHEET_N[6] = {"SLIDE", "NUDGE", "FILL", "MOVE", "COPY", "DELETE"};
+static const char *const FILL_N[3] = {"NORMAL", "FILL", "NO FILL"};
+static const char *const DSHEET_N[6] = {"RATCHET", "NUDGE", "FILL", "MOVE", "COPY", "DELETE"};
+UI_SMALL static void note_walk(int32_t dir)
+{
+    track_t *t = TSEL;
+    uint32_t len = trk_len(t), i = ui.cursor % len, guard = len;
+    const step_t *st = &t->step[i];
+    if (dir > 0 && step_on(st) && ui.note_k + 1u < st->n) {
+        ui.note_k++;
+        return;
+    }
+    if (dir < 0 && step_on(st) && ui.note_k) {
+        ui.note_k--;
+        return;
+    }
+    do                                                  /* (the TIEs belong to the note before them) */
+        i = dir > 0 ? (i + 1u) % len : (i + len - 1u) % len;
+    while (--guard && t->step[i].time == ST_TIE);
+    cursor_set((int32_t)i);
+    if (dir < 0 && step_on(&t->step[i]))
+        ui.note_k = (uint8_t)(t->step[i].n - 1u);       /* (back: the chord's last note) */
+}
+UI_SMALL static uint32_t note_force(const step_t *st, uint32_t k)   /* 0 GHOST .. 3 HARD, 4 ACC (the step's accent) */
+{
+    uint32_t l = (st->lvl >> (2u * k)) & 3u;
+    if (st->flags & SF_ACCENT)
+        return 4u;
+    return l == LV_GHOST ? 0u : l == LV_SOFT ? 1u : l == LV_HARD ? 3u : 2u;
+}
+UI_SMALL static void note_force_set(step_t *st, uint32_t k, uint32_t f)
+{
+    uint32_t sh = 2u * k;
+    st->lvl = (uint8_t)((st->lvl & ~(3u << sh)) | (uint32_t)F_LVL[f > 3u ? 3u : f] << sh);
+    st->flags = (uint8_t)((st->flags & ~SF_ACCENT) | (f == 4u ? SF_ACCENT : 0u));
+}
+static uint8_t drop2(uint32_t v, uint32_t k)            /* a 2-bit field per note: note k's taken out */
+{
+    return (uint8_t)((v & ((1u << (2u * k)) - 1u)) | ((v >> (2u * k + 2u)) << (2u * k)));
+}
+UI_SMALL static void note_del_one(step_t *st, uint32_t k)   /* note k out of a chord's step */
+{
+    uint32_t j, c;
+    for (j = k; j + 1u < st->n; j++)
+        st->note[j] = st->note[j + 1u];
+    st->lvl = drop2(st->lvl, k);
+    st->rat = drop2(st->rat, k);
+    c = (st->flags & SF_CONT_ALL) / SF_CONT0;
+    c = (c & ((1u << k) - 1u)) | ((c >> (k + 1u)) << k);
+    st->flags = (uint8_t)((st->flags & ~SF_CONT_ALL) | c * SF_CONT0);
+    st->n--;
+}
+UI_SMALL static void note_del(track_t *t, uint32_t i, uint32_t k)   /* one note of a chord; the last one: the step */
+{
+    step_t *st = &t->step[i];
+    uint32_t j, c;
+    if (!step_on(st))
+        return;
+    if (st->n <= 1u) {
+        note_span_set(t, i, 1);                         /* (its TIEs: RESTs; 2.8.3: where it went on under others, out) */
+        step_clear(st);
+        return;
+    }
+    {   /* (2.8.3) one note of a chord: the chord back to one step, then the others as long again (its going on: gone) */
+        uint32_t w = note_span(t, i);
+        if (w > 1u && w != note_len(t, i)) {
+            note_span_set(t, i, 1);
+            note_del_one(st, k);
+            note_span_set(t, i, w);
+            return;
+        }
+    }
+    for (j = k; j + 1u < st->n; j++)
+        st->note[j] = st->note[j + 1u];
+    st->lvl = drop2(st->lvl, k);
+    st->rat = drop2(st->rat, k);
+    c = (st->flags & SF_CONT_ALL) / SF_CONT0;
+    c = (c & ((1u << k) - 1u)) | ((c >> (k + 1u)) << k);
+    st->flags = (uint8_t)((st->flags & ~SF_CONT_ALL) | c * SF_CONT0);
+    st->n--;
+}
+UI_SMALL static int step_free(const track_t *t, uint32_t i)   /* nothing there: no note, no TIE */
+{
+    return !step_on(&t->step[i]) && t->step[i].time != ST_TIE;
+}
+/* a note (its step, TIEs, nudge, fill, locks) one step on or back (copy: to just after it, the original stays);
+ * the steps it goes to must be free, inside the pattern. Returns where it is now, or -1 */
+UI_SMALL static int32_t note_shift(track_t *t, uint32_t i, int32_t dir, int copy)
+{
+    uint32_t len = trk_len(t), n = note_len(t, i), j, to;
+    if (!step_on(&t->step[i]) || note_span(t, i) != n)
+        return -1;                                      /* (2.8.3: one going on under later notes: LEN 1 first) */
+    to = copy ? i + n : dir > 0 ? i + 1u : i - 1u;
+    if ((!copy && dir < 0 && i == 0u) || to + n > len)
+        return -1;
+    for (j = 0; j < n; j++)
+        if ((to + j < i || to + j >= i + n) && !step_free(t, to + j))
+            return -1;
+    fm1_irq_off();
+    if (copy) {
+        for (j = 0; j < n; j++)
+            t->step[to + j] = t->step[i + j];
+    } else if (dir > 0) {
+        for (j = n; j > 0; j--)
+            t->step[i + j] = t->step[i + j - 1u];
+        step_clear(&t->step[i]);
+    } else {
+        for (j = 0; j < n; j++)
+            t->step[i - 1u + j] = t->step[i + j];
+        step_clear(&t->step[i + n - 1u]);
+    }
+    t->micro[to] = t->micro[i];
+    step_fill_set(t, to, step_fill(t, i));
+    for (j = 0; j < NLOCK; j++)
+        if (t->lock[j].step == i) {
+            if (!copy)
+                t->lock[j].step = (uint8_t)to;
+            else {
+                int k = lock_find(t, to, t->lock[j].param, 1);
+                if (k >= 0) {
+                    t->lock[k].step = (uint8_t)to;
+                    t->lock[k].param = t->lock[j].param;
+                    t->lock[k].val = t->lock[j].val;
+                }
+            }
+        }
+    if (!copy) {
+        t->micro[i] = 0;
+        step_fill_set(t, i, FC_NORM);
+    }
+    fm1_irq_on();
+    return (int32_t)to;
+}
+/* (2.7.2) OCT+ on the NOTES page and the drum grid: a tap acts on release (its job until now), a hold (0.4 s) opens the
+ * sheet. Returns pressed without OCT+ while it is down; *ev: 1 tapped, 2 held. OCT- pressed meanwhile: OCT+ as before */
+static uint8_t octp;
+static uint32_t octp_t;
+UI_SMALL static uint32_t octp_filter(uint32_t pressed, uint32_t *ev)
+{
+    uint32_t ub = 1u << panel.btn[B_OCTUP];
+    *ev = 0;
+    if (pressed & ub) {
+        octp = 1;
+        octp_t = fm1_ms;
+        pressed &= ~ub;
+    }
+    if (octp == 1u && (fm1_in.buttons & (1u << panel.btn[B_OCTDN]))) {
+        octp = 0;
+        return pressed | ub;                            /* (both: the octave back to 0, as before) */
+    }
+    if (octp && !(fm1_in.buttons & ub)) {
+        *ev = octp == 1u;
+        octp = 0;
+    } else if (octp == 1u && fm1_ms - octp_t >= 400u) {
+        octp = 2;
+        *ev = 2;
+    }
+    return pressed;
+}
+/* (2.8.1) the sheet (NOTES, the drum grid) as a strip along the bottom, over the knob area, so the
+ * sequencer itself stays fully visible: the row KNOB 1 picks is lit in the middle with its value, the
+ * rows before and after it faint on each side, and six dots for the place in the list. OCT+ acts, OCT- closes. */
+UI_SMALL static void sheet_bar(int32_t y, const char *const *lab, const char *const *val, uint32_t sel, uint16_t acc)
+{
+    uint32_t prev = (sel + 5u) % 6u, next = (sel + 1u) % 6u, i;
+    int32_t x = 6, lw = text_w(&FONT_S, lab[sel]);
+    int32_t vw = val[sel] && val[sel][0] ? text_w(&FONT_S, val[sel]) + 6 : 0;
+    cv_rect(0, y, 240, 16, C_BLACK);                   /* the strip */
+    cv_rect(0, y, 240, 1, C_LINE);
+    cv_text(x, y + 2, &FONT_S, lab[prev], C_DIM);      /* the row before (faint) */
+    x += text_w(&FONT_S, lab[prev]) + 10;
+    cv_rect(x - 3, y + 1, lw + vw + 6, 14, acc);       /* the row under edit, lit */
+    cv_text(x, y + 2, &FONT_S, lab[sel], C_WHITE);
+    if (vw)
+        cv_text(x + lw + 6, y + 2, &FONT_S, val[sel], C_WHITE);
+    x += lw + vw + 10;
+    cv_text(x, y + 2, &FONT_S, lab[next], C_DIM);      /* the row after (faint) */
+    for (i = 0; i < 6u; i++)                            /* the place in the six */
+        cv_rect(200 + (int32_t)i * 6, y + 6, 4, 4, i == sel ? acc : C_DIM);
 }
 
 UI_SMALL static void note_name(char *b, uint32_t n)
@@ -354,13 +575,38 @@ UI_SMALL static int param_kept(uint32_t i)
 /* preset pi of the engine the track asked for: the whole sound (not the pattern parameters) */
 /* SLOOP 2.7: a sound loaded while the track's arpeggiator runs keeps it: its settings (MODE … ORDER, never written: the
  * audio ISR never sees them change) and the notes it holds (seq.c arp_keep_req: the panic of this track leaves them).
- * With the arp OFF, a preset brings its own arp, as before */
+ * With the arp OFF, or the arp the old sound brought (2.7.1), a preset brings its own arp, as before */
 UI_SMALL static int arp_param(uint32_t i) { return i >= P_AMODE && i <= P_AORDER; }
+/* 2.7.1: is the arp that runs the sound's own, as the sound brought it (8BIT ARP, a user preset with an arp)? Then the
+ * next sound replaces it with its own (most often OFF), as up to 2.6: only an arp you turned on or changed goes on.
+ * (2.7 kept any running arp: after 8BIT ARP, every sound arpeggiated.) The sound loaded: t->engine (not eng_req,
+ * already the new one when the ENGINE changes), t->preset, or user_of(t) */
+UI_SMALL static int arp_is_sounds(const track_t *t)
+{
+    int16_t a[8];
+    uint32_t i, k = user_of(t);
+    if (k < UP_SLOTS) {
+        if (up_arp_of(k, a))
+            return 0;
+    } else {
+        const engine_t *e = ENGINES[t->engine % NENGINES];
+        const preset_t *pr;
+        if (t->user || !e->npresets)
+            return 0;
+        pr = &e->presets[t->preset % e->npresets];
+        for (i = 0; i < 8u; i++)
+            a[i] = (int16_t)(i < 4u && pr->arp[i] ? pr->arp[i] - 1 : TP[P_AMODE + i].def);
+    }
+    for (i = 0; i < 8u; i++)
+        if (t->p[P_AMODE + i] != a[i])
+            return 0;
+    return 1;
+}
 UI_SMALL static void apply_preset_to(track_t *t, uint32_t pi)
 {
     const engine_t *e = ENGINES[t->eng_req % NENGINES];
     uint32_t i;
-    int keep_arp = t->p[P_AMODE] != 0, kbd_hold = !t->p[P_AMODE] && t->p[P_AHOLD];   /* (2.7: KBD HOLD stays on) */
+    int keep_arp = t->p[P_AMODE] != 0 && !arp_is_sounds(t), kbd_hold = !t->p[P_AMODE] && t->p[P_AHOLD];   /* (2.7: KBD HOLD stays on) */
     if (is_drum(t))
         return;
     if (keep_arp)
@@ -677,13 +923,18 @@ UI_SMALL static int preset_go_to(track_t *t, uint32_t n)
 }
 /* MIDI Program Change (2.6, after Felucca 1.5.1, PR #179 by @renebohne): seq.c queues it per track (the track its
  * channel plays, GLO > MIDI); here, in the main loop (a flash read, a sound loaded): a synth track takes the n-th sound
- * of the PRESETS list (0 the first factory sound, the user presets after the 153), the drum track kit n. A number past
- * the end does nothing (no wrap) */
+ * of the PRESETS list (0 the first factory sound, the user presets after the factory ones), the drum track kit n. A
+ * number past the end does nothing (no wrap).
+ * (2.7.2) a Program Change is only 7 bits (0..127), too few for the whole list (the factory sounds plus the user
+ * presets). Bank Select (CC 0) before it extends the reach: bank 0 the sounds 0..127, bank 1 the sounds 128..255 (the
+ * rest of the factory list, then the user presets), and PC_USER_BANK the user presets straight (PC n = user preset n).
+ * Bank 0 and no CC 0 are the old behaviour. The drum track ignores the bank (one GM kit). */
+#define PC_USER_BANK 8u
 UI_SMALL static void pc_poll(void)
 {
     uint32_t i;
     for (i = 0; i < NTRK; i++) {
-        uint32_t r = pc_req[i], n;
+        uint32_t r = pc_req[i], n, bank = pc_bank[i];
         char b[12];
         if (!r)
             continue;
@@ -695,8 +946,15 @@ UI_SMALL static void pc_poll(void)
             trk[i].p[P_E0] = (int16_t)n;
             if (&trk[i] == TSEL)
                 sync_reload = 1;
-        } else if (preset_go_to(&trk[i], n)) {
-            continue;
+        } else if (bank == PC_USER_BANK) {           /* (2.7.2) user presets straight: PC n = user slot n (0..31) */
+            if (up_load_to(&trk[i], n))              /* (an empty slot or past the end: nothing; after 2.8.3: it
+                                                      * read the result the wrong way round: "PROG n" for an empty
+                                                      * slot, no message for a preset loaded) */
+                continue;
+        } else {                                     /* (2.7.2) linear: bank 0 the sounds 0..127, bank 1 128..255 */
+            n = bank * 128u + (r - 1u);
+            if (preset_go_to(&trk[i], n))
+                continue;
         }
         str_cpy(b, "T1 PROG ", sizeof b);
         b[1] = (char)('1' + i);

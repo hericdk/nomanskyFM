@@ -1,9 +1,9 @@
 # No Man Sky FM
 
-**A space adventure for the M-VAVE FM-1.** One hand flies the ship with two knobs, the other makes the music. Land on planets, mine, fight robots, warp between stars, and play the soundtrack of your own journey. Current version **v0.5**, based on **SLOOP 2.7.1**.
+**A space adventure for the M-VAVE FM-1.** One hand flies the ship with two knobs, the other makes the music. Fly over planets in 3D, race, land, mine, fight, warp between stars, and play the soundtrack of your own journey. Current version **v0.5**, based on **SLOOP 2.7.1**.
 
 - **Site, installer and 3D simulator (the real firmware in your browser, with sound):** https://hericdk.github.io/nomanskyFM/
-- **Install on your FM-1:** open the site in Chrome or Edge, connect the FM-1 by USB and press install. The package is also in [`release/nmsfm-0.5.fwsc`](release/).
+- **Install on your FM-1:** open the site in Chrome or Edge, connect the FM-1 by USB and press install. The package is also in [`release/nmsfm-0.9.fwsc`](release/).
 - **License:** GPL-3.0-only, like SLOOP and Felucca.
 
 ## The shortcuts that exist only here
@@ -14,12 +14,12 @@ On HOME the FM-1 is the game.
 |---|---|
 | **KNOB 1** | turn the ship · on a planet: walk |
 | **KNOB 2** | speed · on a planet: walk |
-| **KNOB 3** | zoom: wide, near, close-up, cabin |
+| **KNOB 3** | zoom: wide, near, close-up, cabin · over a planet, turned down: back to space |
 | **KNOB 4** | the selected track's volume |
 | **OCT− held** | boost (1.2 s: pulse jump) · on a planet: run |
 | **OCT− held, standing still** | on a planet: call the ship |
 | **OCT− twice** | auto boost (another click: off) |
-| **OCT+ held** | land · dock · laser (let go: collect) · take off by the ship |
+| **OCT+ held** | enter a planet · land · dock · race the flag ship · laser (let go: collect) · take off by the ship |
 | **OCT− + OCT+** | the warp map |
 | **HOME held** | on a planet: call the ship · in space: the menu |
 | **HOME twice** | radar |
@@ -30,6 +30,12 @@ On HOME the FM-1 is the game.
 
 | Feature | What it does |
 |---|---|
+| **The planet in 3D** | Choose a planet and you come down flying over the ground you walk on. Land on land (a tree under the ship blows to pixels); it refuses the sea. |
+| **Races** | At top speed over a planet, four ships join you through six beams of light. In space a ship with a chequered flag starts the road race. Inspired by Galactic Racer. |
+| **CDs** | Every sound change shows the sounds as CDs in a 3D carousel, after the tapes of winampFM. |
+| **PARTY, scale arpeggio** | FX > PARTY and ARP 2 > ORD SCL, from winampFM. |
+| **WAVE** | EDIT > WAVE, a mini sample editor, after the ½ sampler. |
+| **Editor** | [The No Man Sky FM editor](https://hericdk.github.io/nomanskyFM/editor/): the SLOOP editor by isod89 with our name and colours. |
 | **The opening** | Your ship flies in over the stars with its own soft synthwave theme, then arrives in space. A first-time HOW TO FLY box explains the controls. |
 | **Planets** | Every planet different, in all eight colours of the game: seas, rivers, hills, rings. The three nearest wait at the edge of the screen with their distance in light-years. |
 | **On the ground** | Walk, run, mine resources with the laser (let go to collect), fight the sentinels: they chase you, three hits and they blow up. Hostile planets shoot back. |
@@ -37,18 +43,25 @@ On HOME the FM-1 is the game.
 | **Pursuit** | The robots you fought follow you into space as red ships, shooting. Boost hard and you lose them. Radar: a blue ring of light. |
 | **Close-up and cabin** | Zoom in to the ship among trails of light, and once more to sit inside it, the planet ahead in the window. |
 | **Warp** | A galactic map of star systems, a tunnel of light, a new system. |
-| **Every screen over the game** | Pages, layers, REC, the menu: the game goes on behind them through a mesh of pixels. |
+| **Every screen over the game** | Pages, layers, REC, the menu: a small copy of the game stays behind them, through a dark mesh of pixels. |
 | **Key light effects** | Menu · KEY LED: the light a key makes (waves, rain, comet, fireworks). |
 | **DRUM SOUND page** | GLO · DRUM SOUND: a drum's TUNE and DECAY, in this firmware's look. |
 | **REC · QUANT** | KNOB 4 on the REC screen: QUANT ON / OFF, to record off the grid. |
 | **3D simulator** | The real firmware compiled to WebAssembly, in a 3D model of the FM-1. |
 
-Merged from SLOOP 2.6 → 2.7.1: the sound on both cores of the FM-1, 15 arp modes and KBD HOLD, MIDI 3 (FX channel, drum map, remote, clock out), SAVE SECTION A–D and favourite sounds, drum TUNE and DECAY, looping samples, REC QUANT off, knob acceleration, USB rate.
+Merged from SLOOP up to 2.8.4 (more stable MIDI clock, resonance on every track filter, a filter on the drums, sound fixes): the sound on both cores of the FM-1, 15 arp modes and KBD HOLD, MIDI 3 (FX channel, drum map, remote, clock out), SAVE SECTION A–D and favourite sounds, drum TUNE and DECAY, looping samples, REC QUANT off, knob acceleration, USB rate.
+
+## Still being optimized
+
+v0.9 brings a lot at once. The 3D flight and some screens can still lose frames, and more optimization is coming. The flash is nearly full: BASS, hats, cymbals and SCRATCH went to lower sample rates to make room, and the NOTES page of SLOOP 2.8 has its logic but not its piano-roll screen yet.
 
 ## Changes
 
+- **v0.9:** the planet in 3D with landing, two new races, CDs on every sound change, SLOOP 2.8.4, PARTY, scale arpeggio, lighter screens over the game, the editor on the site, six languages. Removed: race flags, station gates, the neon space race.
+- **v0.6:** test builds, never released: WAVE, the knob strip, page dots.
 - **v0.5:** battles in space (a boss in 30 s, little ships that keep coming), pirate raids, escorts called by holding keys, races on planets and in space (gears, pixel dashboard), a hangar with five ships and upgrades, quests and ships that talk to you, REC keeps the arp and the punch-in FX (saved with the project: format 7, older projects still load), a take-off and close-up drawn from a 3D model of the ship.
 - **v0.4:** launch version, based on SLOOP 2.7.1.
+- **v0.1 to v0.3:** the base on SLOOP 2.6, new screens, the game on HOME (inspired by Low Mem Sky and No Man’s Sky), map, warp, stations, combat.
 
 ## Use it in your own work
 

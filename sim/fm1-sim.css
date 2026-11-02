@@ -1,4 +1,4 @@
-/* FM1 Quest — simulator faceplate (layout from the user's FM-1 reference image) */
+/* FM1 Quest — simulator faceplate (layout from an FM-1 reference image) */
 .ver{font-size:10px;color:var(--dim);font-weight:400;letter-spacing:.04em;margin-left:4px}
 #dbg{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;flex-basis:100%;padding-top:6px;border-top:1px dashed var(--line)}
 #dbg[hidden]{display:none}

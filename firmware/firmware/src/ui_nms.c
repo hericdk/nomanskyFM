@@ -24,8 +24,10 @@ static uint32_t nhs(uint32_t h, const char *s)
     return nh(h, 0x55u);
 }
 
+static void n_theme(void);
 static void n_screen(uint32_t s)                        /* a screen begins: a clean black one */
 {
+    n_theme();
     if (n_scr == s)
         return;
     n_scr = (uint8_t)s;
@@ -64,7 +66,14 @@ static uint32_t n_fit(const char *s, int32_t w, uint32_t max)
 #define NG RGB(0x00, 0x90, 0x43)
 #define NP RGB(0x53, 0x26, 0x8D)
 #define NO RGB(0xD6, 0x54, 0x32)
-static const uint16_t NCOL[4] = {NB, NG, NP, NO};
+static uint16_t NCOL[4] = {NB, NG, NP, NO};          /* (a theme from the ½ sampler / the web editor: its tracks' colours, n_screen) */
+static void n_theme(void)
+{
+    static const uint16_t DEF[4] = {NB, NG, NP, NO};
+    uint32_t k;
+    for (k = 0; k < 4u; k++)
+        NCOL[k] = theme_valid && theme_on ? theme.trk[k] : DEF[k];
+}
 /* and four more for the world of the game (depth, water, warp): bright green, red, yellow, deep blue. GCOL: the
  * colours a planet can take (0..3 as NCOL, 4 EG, 5 ER, 6 EY, 7 EN) */
 #define EG RGB(0x00, 0xE8, 0x00)
@@ -174,7 +183,7 @@ static void n_stick(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)
             cv_line(x0 + a, y0 + b, x1 + a, y1 + b, c);
 }
 
-/* the bars' two new tones of a knob colour (after the user's references): 0 deep (the cells to fill), 1 light */
+/* the bars' two new tones of a knob colour (after the references): 0 deep (the cells to fill), 1 light */
 static uint16_t n_tone(uint16_t c, int light)
 {
     static const uint16_t K[4] = {NB, NG, NP, NO};
@@ -431,7 +440,7 @@ static void vz_put(uint32_t which, uint32_t v)
 }
 static int32_t vz_alpha(void)                           /* the numbers' opacity (0..16) while the visuals play; -1: they don't */
 {
-    uint32_t v = vz_set(0);                             /* (the user's choice: the note's look all the time, visual behind,
+    uint32_t v = vz_set(0);                             /* (the choice: the note's look all the time, visual behind,
                                                          * the numbers see-through; the menu's NOTE value sets how much) */
     return v ? (int32_t)((v - 1u) * 5u * 16u / 100u) : -1;
 }
@@ -1112,12 +1121,85 @@ static void n_carousel(uint32_t *cache)
             continue;
         n_textq(x - n_wq(t, q) / 2, 38 - ((16 * q) >> 8), t, q, NW);
     }
-    if (n > 1u) {                                       /* the scroll bar: a thin line, the page's place in the colour */
-        int32_t tw = 236 / (int32_t)n, tx = 2 + (car_bar * (236 - tw) / (int32_t)(n - 1u) >> 8);
-        cv_rect(2, 44, 236, 1, NP);
-        cv_rect(tx, 43, tw, 3, NCOL[song.sel & 3u]);
+    if (n > 1u) {                                       /* a dot a page; the page's place a longer one in the colour, sliding */
+        int32_t x0 = 120 - ((int32_t)(n - 1u) * 8 + 3) / 2;
+        for (i = 0; i < n; i++)
+            cv_rect(x0 + (int32_t)i * 8, 42, 3, 3, NP);
+        cv_rect(x0 - 3 + (car_bar * 8 >> 8), 42, 9, 3, NCOL[song.sel & 3u]);
     }
     cv_blit(0, 0);
+}
+
+/* WAVE, the mini sample editor (SAMPLE on a USR slot from the ½ sampler): the wave as big as it goes, the
+ * settings drawn on it as lines in the ½ sampler's colours (IN / OUT orange, the loop green, the play head white),
+ * outside IN..OUT a pixel mesh; under it the 4 knobs' strip, the one turning lit */
+#define WV_OR 0xFAC3u                                   /* #ff5a1f, the ½ sampler's IN / OUT */
+static void n_wtime(char *b, uint32_t pos, uint32_t rate)   /* a place in the slot as seconds, 1.25 */
+{
+    uint32_t hz = (rate * 44100u) >> 16, cs = hz ? pos * 100u / hz : 0;
+    fmt_int(b, (int32_t)(cs / 100u));
+    b += str_len(b);
+    b[0] = '.', b[1] = (char)('0' + cs / 10u % 10u), b[2] = (char)('0' + cs % 10u), b[3] = 0;
+}
+static void n_wave(const page_t *pg, uint32_t *cache)
+{
+    uint32_t si = (uint32_t)TSEL->p[P_E0] % SMP_NALL, k = si >= SMP_NSETS ? si - SMP_NSETS : 9u, c, sig, n = 0, rate = 0;
+    int32_t in = TSEL->p[P_E5], out = TSEL->p[P_E7], x, ix, ox, head = -1, mx = 1;
+    int ok = k < SMP_USER_SLOTS && usr_nz[k] == 1u && usr_grid[k][0];
+    if (ok) {
+        n = usr_zone[k][0].n, rate = usr_zone[k][0].rate;
+        for (c = 0; c < NVOICE; c++)                    /* the play head: a voice on this slot */
+            if (TSEL->v[c].active && (uint32_t)TSEL->v[c].s[4] >= 0x8000u && (((uint32_t)TSEL->v[c].s[4] >> 5) & 3u) == k)
+                head = (int32_t)(TSEL->v[c].ph[0] * 240u / n);
+    }
+    sig = nh(nh(nh(nh(si, (uint32_t)in), (uint32_t)out), (uint32_t)TSEL->p[P_E3] * 7u + (uint32_t)TSEL->p[P_E1] * 131u),
+             (uint32_t)(head + 1) * 3u + (ui.hot_t ? ui.hot_col + 1u : 0u) * 977u);
+    if (!ui.force && sig == *cache)
+        return;
+    *cache = sig;
+    cv_begin(240, 124, NK);                            /* (a canvas is 124 rows at most: the wave, then the strip) */
+    if (!ok) {
+        const char *t = k < SMP_USER_SLOTS ? "EMPTY SLOT" : "SET: USR1-USR4";
+        n_texto(120 - n_w(t, 1) / 2, 54, t, 1, NP);
+    } else {
+        ix = in * 240 / 128, ox = 239 - out * 240 / 128;
+        for (x = 0; x < 240; x++)
+            if (usr_peak[k][x] > mx)
+                mx = usr_peak[k][x];
+        for (x = 0; x < 240; x++) {                     /* the wave: in the track's colour; outside IN..OUT a mesh */
+            int32_t a = usr_peak[k][x] * 54 / mx, y;
+            if (x >= ix && x <= ox)
+                cv_rect(x, 62 - a, 1, 2 * a + 1, NCOL[song.sel & 3u]);
+            else
+                for (y = 62 - a + ((x ^ a) & 1); y <= 62 + a; y += 2)
+                    cv_rect(x, y, 1, 1, NP);
+        }
+        cv_rect(0, 62, 240, 1, NP);
+        if (TSEL->p[P_E3] && (in || out))              /* LOOP (trimmed): a green bracket under IN..OUT */
+            cv_rect(ix, 120, ox - ix + 1, 3, EG), cv_rect(ix, 114, 2, 9, EG), cv_rect(ox - 1, 114, 2, 9, EG);
+        cv_rect(ix > 0 ? ix - 1 : 0, 0, 2, 124, WV_OR);
+        cv_rect(ox, 0, 2, 124, WV_OR);
+        if (head >= 0 && head < 240)
+            cv_rect(head, 0, 1, 124, NW);
+    }
+    cv_blit(0, 48);
+    cv_begin(240, 68, NK);
+    for (c = 0; c < 4u; c++) {                          /* the knobs' strip: what each does, its value */
+        int16_t *vp;
+        const param_desc_t *d = page_desc(pg, c, &vp);
+        int hot = ui.hot_t && ui.hot_col == c;
+        char b[12];
+        const char *lb = c == 0u ? "IN" : c == 1u ? "OUT" : d ? d->label : "";
+        b[0] = 0;
+        if (ok && c < 2u)
+            n_wtime(b, c == 0u ? ((uint32_t)in * n) >> 7 : n - (n >> 7) * (uint32_t)out, rate);
+        else if (d && vp)
+            n_val(d, *vp, b);
+        cv_rect((int32_t)c * 60 + 1, 8, 58, hot ? 3 : 1, NCOL[c]);
+        n_texto((int32_t)c * 60 + 30 - n_w(lb, 1) / 2, 14, lb, 1, hot ? NW : NP);
+        n_texto((int32_t)c * 60 + 30 - n_w(b, 1) / 2, 36, b, 1, NW);
+    }
+    cv_blit(0, 172);
 }
 
 static void n_page(void)
@@ -1165,6 +1247,15 @@ static void n_page(void)
         kind[3] = BK_GROW;
         vz[1] = VZ_PITCH, vz[2] = VZ_GATE;
         lb[0] = "SOUND", lb[1] = "TUNE", lb[2] = "DECAY", lb[3] = "LEVEL";
+    } else if (pg->graph == GR_PARTY) {                 /* FX > PARTY: FORM LEAD AUTOTURN STYLE */
+        static const char *const TRK[4] = {"1", "2", "3", "D"};
+        str_cpy(v[0], WP_FORM[wp_form & 3u], 8);
+        str_cpy(v[1], TRK[wp_lead & 3u], 8);
+        str_cpy(v[2], WP_TURN[wp_turn % 5u], 8);
+        str_cpy(v[3], WP_STYLE[wp_style & 1u], 8);
+        r[0] = wp_form * 1000 / 3, r[1] = wp_lead * 1000 / 3, r[2] = wp_turn * 1000 / 4, r[3] = wp_style * 1000;
+        kind[0] = BK_GROW, kind[1] = BK_TURN, kind[2] = BK_GROW, kind[3] = BK_TURN;
+        lb[0] = "FORM", lb[1] = "LEAD", lb[2] = "AUTOTURN", lb[3] = "STYLE";
     } else if (pg->graph == GR_USER) {                  /* SAVE > USER: the slot, LOAD ERASE SAVE */
         int used = up_used(ui.uslot);
         fmt_int(v[0], (int32_t)ui.uslot + 1);
@@ -1228,6 +1319,10 @@ static void n_page(void)
     }
     (void)pos;
     n_carousel(&top);
+    if (pg->graph == GR_WAVE) {
+        n_wave(pg, &quad[0]);
+        return;
+    }
     for (c = 0; c < 4u; c++)
         n_quad(c, v[c], r[c], kind[c], act[c], vz[c], vk[c], vz_alpha(), lb[c], &quad[c]);
 }
@@ -2027,7 +2122,7 @@ static void n_wavs_at(int32_t bot, int32_t room, int armed)
  * pink to orange), how many in a small diamond; lines run from it to the effects' boxes on the right (each box lit
  * when a track uses it), in the track's colour. On top how many tracks hold a loop and how many effects are on;
  * under it the shortcuts: REC + FX clears a track's effects, EDIT + OCT- undoes */
-#define BY_BG RGB(0x0A, 0x0A, 0x2A)                     /* (the user: darker, the text reads over the game) */
+#define BY_BG RGB(0x0A, 0x0A, 0x2A)                     /* (darker, the text reads over the game) */
 #define BY_GRID RGB(0x24, 0x2C, 0x78)
 #define BY_TEAL RGB(0x5E, 0xD8, 0xC8)
 #define BY_DIM RGB(0x2E, 0x6E, 0x86)
@@ -2087,9 +2182,9 @@ static void n_bay(void)
         int32_t y0 = band * 120, x, y;
         cv_begin(240, 120, NK);
         cv_oy = -y0;
-        for (y = y0; y < y0 + 120; y++) {               /* (the user) see-through at the top, solid at the bottom: a
+        for (y = y0; y < y0 + 120; y++) {               /* see-through at the top, solid at the bottom: a
                                                          * gradient in pixels (the game shows through the gaps) */
-            int32_t lv = 12 + y * 5 / 240;              /* (the user: denser, darker: 12/16 at the top) */
+            int32_t lv = 12 + y * 5 / 240;              /* (denser, darker: 12/16 at the top) */
             for (x = 0; x < 240; x++)
                 if ((int32_t)BAYER_N[y & 3][x & 3] < lv)
                     cv_pset(x, y, BY_BG);
@@ -2207,14 +2302,14 @@ static void n_menu(void)
     uint32_t i, sec = mi_sec(ui.menu_sel % MI_COUNT);
     uint32_t sig = ui.menu * 7u + ui.menu_sel * 131u + settings.lowcut * 7919u + lights_lvl * 1299709u +
                    lights_keys * 15485863u + ml_count() * 2654435u + lights_notes * 32452843u + usb_full * 49979687u +
-                   usb_serial * 86028121u + usb_rate * 15486719u + knob_accel_off * 179424673u + cpu1_off * 122949829u +
+                   usb_serial * 86028121u + usb_rate * 15486719u + knob_accel_off * 179424673u + cpu1_off * 122949829u + drum_preview * 236887691u + step_adv_off * 373587883u + flt_reso * 512927357u +
                    (settings.zoom >> 16) * 2246822519u + settings.zoom * 3266489917u + (ui.msg_t ? nhs(3u, ui.msg) : 0u);
     n_screen(SCR_MENU);
     if (!ui.force && sig == ui.menu_sig)
         return;
     ui.menu_sig = sig;
     if (ui.menu == 2) {                                 /* ABOUT: the names (GPL: they stay) */
-        const char *const L[] = {"NO MAN SKY FM", FELUCCA_VERSION, "BASED ON SLOOP 2.7.1", "BY @ISOD89",
+        const char *const L[] = {"NO MAN SKY FM", FELUCCA_VERSION, "STILL BEING OPTIMIZED", "BASED ON SLOOP 2.8.4", "BY @ISOD89",
                                         "AND FELUCCA BY", "LEO KUROSHITA", "H\xDCGELTON INSTRUMENTS",
                                         "GPL-3.0, NO WARRANTY", "FONT: TERMINUS (OFL)", "SAMPLES: CC0", "PHASE: CRISPYZEBRA",
                                         "VOICE: KLATTSCH (MIT)", __DATE__,

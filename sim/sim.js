@@ -44,8 +44,8 @@
   lcdbox.append(cv);
   const x = cv.getContext('2d'), img = x.createImageData(240, 240);
   const say = (a, b) => { x.fillStyle = '#000'; x.fillRect(0, 0, 240, 240); x.textAlign = 'center'; x.fillStyle = '#1ce61c'; x.font = '16px "Pixelify Sans", monospace'; x.fillText(a, 120, 112); x.fillStyle = '#b4b6ca'; x.font = '11px "Pixelify Sans", monospace'; x.fillText(b, 120, 134); };
-  const EN = window.WFM_LANG === 'en';
-  say('NO MAN SKY FM', EN ? 'CLICK TO POWER ON' : 'CLIQUE PARA LIGAR');
+  const EN = window.WFM_LANG !== 'pt', TX = (k, en) => ((window.NMS_I18N || {})[window.WFM_LANG] || {})[k] || en;
+  say('NO MAN SKY FM', TX('s_clk', 'CLICK TO POWER ON'));
   W.screen = cv;                                                       // (the launch page's floating recorder reads it, with W.tap)
   const draw = (fb) => { const d = img.data; for (let k = 0; k < 57600; k++) { const v = fb[k]; d[4 * k] = (v >> 11 & 31) * 255 / 31 | 0; d[4 * k + 1] = (v >> 5 & 63) * 255 / 63 | 0; d[4 * k + 2] = (v & 31) * 255 / 31 | 0; d[4 * k + 3] = 255; } x.putImageData(img, 0, 0); };
   const idb = () => new Promise((res, rej) => { const r = indexedDB.open('nomanskyfm-sim', 1); r.onupgradeneeded = () => r.result.createObjectStore('flash'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
@@ -56,7 +56,7 @@
   const start = async () => {
     if (starting || W.on) return; starting = true;
     try {
-      say('NO MAN SKY FM', EN ? 'POWERING ON…' : 'LIGANDO…');
+      say('NO MAN SKY FM', TX('s_pow', 'POWERING ON…'));
       W.ctx = new AudioContext({ sampleRate: 44100, latencyHint: 'interactive' });
       await W.ctx.audioWorklet.addModule('fm1-worklet.js?v=' + Date.now());
       const [wasmBytes, flashImage] = await Promise.all([(await fetch('nms.wasm?v=' + Date.now(), { cache: 'no-store' })).arrayBuffer(), loadFlash()]);

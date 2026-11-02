@@ -238,6 +238,7 @@ static volatile uint32_t emu_flash_gen;
 #include "ui_menu.c"
 #include "ui_nms.c"          /* No Man Sky FM: every screen */
 #include "ui_game.c"         /* the game on HOME (after Low Mem Sky) */
+#include "ui_cd.c"           /* the sound changed: the CDs */
 #include "ui_input.c"
 /* ---- flash: a RAM image of the FM-1's persisted areas ----
  * storage.c's A/B sector scheme runs unchanged on this array; JS loads a
@@ -605,4 +606,20 @@ WASM_EXPORT("emu_v6_import") int32_t emu_v6_import(void)
     if (!proj_import(&emu_proj, &emu_v6, (int)sizeof emu_v6))
         return 0;
     return proj_ok(&emu_proj) && !memcmp(emu_proj.t, emu_v6.t, sizeof emu_v6.t) && emu_proj.fx_n == 0u;
+}
+
+WASM_EXPORT("emu_cd") uint32_t emu_cd(uint32_t i)   /* test hook: the CDs (ui_cd.c) */
+{
+    return i == 0u ? cd_t0 : i == 1u ? (uint32_t)cd_on() : i == 2u ? (uint32_t)cd_cur : i == 3u ? (uint32_t)cd_tgt : i == 4u ? cd_n : fm1_ms;
+}
+WASM_EXPORT("emu_fl") int32_t emu_fl(uint32_t i)   /* test hook: flying over a planet (ui_game.c fl) */
+{
+    switch (i) {
+    case 0: return fv.x >> 8; case 1: return fv.y >> 8; case 2: return (int32_t)fv.ang; case 3: return fv.v;
+    case 4: return fv.race; case 5: return fv.cp; case 6: return fv.cx[fv.cp % FV_NC]; case 7: return fv.cy[fv.cp % FV_NC];
+    case 8: return fv.rx[0] >> 8; case 9: return fv.ry[0] >> 8; case 10: return fv.down; case 11: return g.mode;
+    case 13: return g_ev_near(); case 14: return (int32_t)ev.t; case 15: return TSEL->arp_note; case 16: return TSEL->nheld;
+    case 22: return fv.gone_n; case 23: return fv.thr; case 17: return TSEL->p[P_AMODE]; case 18: return TSEL->p[P_AORDER]; case 19: return TSEL->p[P_AHOLD]; case 20: return TSEL->p[P_ROOT]; case 21: return TSEL->p[P_SCALE];
+    default: return fv.alt >> 8;
+    }
 }

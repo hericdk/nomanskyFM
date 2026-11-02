@@ -5,9 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>No Man Sky FM · simulator</title>
+<script src="../assets/i18n.js"></script>
 <script>window.__errs = []; addEventListener("error", e => window.__errs.push((e.message || "") + " @ " + String(e.filename || "").split("/").pop() + ":" + e.lineno)); addEventListener("unhandledrejection", e => window.__errs.push("promise: " + (e.reason && e.reason.message || e.reason)));</script>
 <link rel="stylesheet" href="fm1-sim.css">
-<script>/* ?embed: only the model and the hint (the launch page shows it in a frame); ?lang=pt: Portuguese */
+<script>/* ?embed: in the launch page's frame (the same whole simulator, its height sent up); ?lang=pt: Portuguese */
 (function () { const q = new URLSearchParams(location.search); if (q.has('embed')) document.documentElement.classList.add('embed'); window.WFM_LANG = (q.get('lang') || 'en').slice(0, 2); })();</script>
 <style>
 @font-face { font-family: "Pixelify Sans"; src: url(PixelifySans-400.ttf) format("truetype"); font-weight: 400 700; }
@@ -37,7 +38,7 @@ main { max-width: 1320px; margin: 0 auto; padding: 14px 16px 40px; display: grid
 .side { display: flex; flex-direction: column; gap: 12px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
 .card h2 { margin: 0 0 8px; font: 600 13px "Pixelify Sans", monospace; letter-spacing: .08em; color: var(--gold); text-transform: uppercase; }
-#flat { display: block; width: 480px; height: 480px; max-width: 100%; image-rendering: pixelated; background: #000; border-radius: 4px; }
+#flat { display: block; width: 480px; max-width: 100%; height: auto; aspect-ratio: 1; image-rendering: pixelated; background: #000; border-radius: 4px; }
 .guide { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 12.5px; }
 .guide b { color: #fff; font-weight: 600; white-space: nowrap; }
 .guide span { color: #c0c0d0; }
@@ -58,51 +59,47 @@ main { max-width: 1320px; margin: 0 auto; padding: 14px 16px 40px; display: grid
 .demos #vol-m { width: 48px; height: 16px; image-rendering: pixelated; }
 #demo-cap { color: #c8c8d8; font-size: 12.5px; flex: 1 1 260px; }
 
-html.embed body { background: transparent; }
-html.embed header, html.embed .side { display: none; }
-html.embed main { grid-template-columns: 1fr; padding: 0; max-width: none; }
-html.embed .demos { border: 0; background: transparent; justify-content: center; padding: 6px 8px 0; }
-html.embed #demo-cap { flex-basis: 100%; text-align: center; }
-html.embed .stage3d { background: transparent; border: 0; border-radius: 0; }   /* (floats on the page) */
-html.embed .s3d-status { display: none; }
+html.embed body { background: transparent; }   /* ?embed: the launch page shows the WHOLE simulator in a frame (the standard: header, model, pixel screen, how to play) */
+html.embed header { position: static; background: transparent; }
+html.embed main { padding-top: 10px; }
 html.embed, html.embed body { overflow: hidden; }
 </style>
 </head>
 <body>
 <header>
-  <h1>No Man Sky FM <small>simulator · the real firmware (WebAssembly)</small></h1>
-  <button id="b-on">power on</button>
-  <button id="b-snd" class="on" title="sound on / off">sound</button>
+  <h1>No Man Sky FM <small data-i="s_title">simulator · the real firmware (WebAssembly)</small></h1>
+  <button id="b-on" data-i="s_on">power on</button>
+  <button id="b-snd" class="on" title="sound on / off" data-i="s_snd">sound</button>
   <button id="b-midi" title="a MIDI keyboard or the FM-1 over USB">MIDI / FM-1 USB</button><span id="o-midi"></span>
   <span id="armed"></span>
   <span class="sp"></span>
-  <button id="b-reset" title="erase the simulator's saved memory (project, settings, the game's save) and restart">reset memory</button>
+  <button id="b-reset" title="erase the simulator's saved memory (project, settings, the game's save) and restart" data-i="s_reset">reset memory</button>
 </header>
 <div id="demos" class="demos">
-  <span id="demo-cap">Click the screen to power on. Fly with KNOB 1 and 2, hold OCT+ to land, play the keys to make the soundtrack.</span>
+  <span id="demo-cap" data-i="s_hint">Click the screen to power on. Fly with KNOB 1 and 2, hold OCT+ to land, play the keys to make the soundtrack.</span>
 </div>
 <main>
   <div id="sim"></div>
   <div class="side">
     <div class="card">
-      <h2>The screen, pixel for pixel</h2>
+      <h2 data-i="s_scr">The screen, pixel for pixel</h2>
       <canvas id="flat" width="240" height="240"></canvas>
-      <p class="note">The same picture as on the model's glass: what the firmware draws on the 240×240 LCD.</p>
+      <p class="note" data-i="s_scrn">The same picture as on the model’s glass: what the firmware draws on the 240×240 LCD.</p>
     </div>
     <div class="card">
-      <h2>How to play</h2>
+      <h2 data-i="s_how">How to play</h2>
       <div class="guide">
-        <b><span class="k1">K1</span> <span class="k2">K2</span></b><span>turn the ship · speed (on a planet: walk) <kbd>⇧1</kbd> <kbd>⇧2</kbd> + <kbd>↑</kbd><kbd>↓</kbd></span>
-        <b>OCT− held</b><span>boost · on a planet: run (standing still: call the ship) <kbd>Z</kbd></span>
-        <b>OCT+ held</b><span>land · on a planet: laser, take off by the ship <kbd>X</kbd></span>
-        <b>OCT− + OCT+</b><span>the warp map</span>
-        <b>OCT click</b><span>the octave, as always</span>
-        <b><span class="k3">K3</span> <span class="k4">K4</span></b><span>zoom (to the close-up and the cabin) · the track's volume</span>
-        <b>HOME 2×</b><span>radar · HOME held: on a planet the ship, in space the menu <kbd>H</kbd></span>
-        <b>PLAY/STOP</b><span>the music <kbd>Space</kbd></span>
-        <b>keys</b><span>play notes <kbd>1</kbd>…<kbd>0</kbd>, <kbd>⇧5</kbd>…<kbd>⇧0</kbd></span>
+        <b><span class="k1">K1</span> <span class="k2">K2</span></b><span><span data-i="s_k12">turn the ship · speed (on a planet: walk)</span> <kbd>⇧1</kbd> <kbd>⇧2</kbd> + <kbd>↑</kbd><kbd>↓</kbd></span>
+        <b data-i="s_ohd">OCT− held</b><span><span data-i="s_a">boost · on a planet: run (standing still: call the ship)</span> <kbd>Z</kbd></span>
+        <b data-i="s_bhd">OCT+ held</b><span><span data-i="s_b">enter a planet · land · laser · take off by the ship</span> <kbd>X</kbd></span>
+        <b>OCT− + OCT+</b><span data-i="s_map">the warp map</span>
+        <b data-i="s_ock">OCT click</b><span data-i="s_oct">the octave, as always</span>
+        <b><span class="k3">K3</span> <span class="k4">K4</span></b><span data-i="s_k34">zoom (to the close-up and the cabin) · the track’s volume</span>
+        <b>HOME 2×</b><span><span data-i="s_home">radar · HOME held: on a planet the ship, in space the menu</span> <kbd>H</kbd></span>
+        <b>PLAY/STOP</b><span><span data-i="s_play">the music</span> <kbd>Space</kbd></span>
+        <b data-i="s_kk">keys</b><span><span data-i="s_keys">play notes</span> <kbd>1</kbd>…<kbd>0</kbd>, <kbd>⇧5</kbd>…<kbd>⇧0</kbd></span>
       </div>
-      <p class="note">Right click (or Shift+click) a button of the model to keep it held.</p>
+      <p class="note" data-i="s_held">Right click (or Shift+click) a button of the model to keep it held.</p>
     </div>
   </div>
 </main>
@@ -118,12 +115,16 @@ html.embed, html.embed body { overflow: hidden; }
   $('#b-on').onclick = () => W.start();
   document.addEventListener('wfm-power', () => { $('#b-on').textContent = 'on'; $('#b-on').classList.add('on'); });
   $('#b-snd').onclick = (e) => { const m = !W.muted; W.setMute(m); e.target.classList.toggle('on', !m); };
-  $('#b-reset').onclick = () => { if (confirm('Erase the simulator memory and restart?')) W.resetFlash(); };
-  $('#b-midi').onclick = async () => { try { const n = await W.midiOn(); $('#o-midi').textContent = n ? n + ' MIDI input(s) on' : 'no MIDI device found'; $('#b-midi').classList.add('on'); } catch (e) { $('#o-midi').textContent = String(e.message || e); } };
-  if (window.WFM_LANG === 'pt') {                                      // (the launch page in Portuguese)
-    $('#demo-cap').textContent = 'Clique na tela para ligar. Pilote com o KNOB 1 e 2, segure OCT+ para pousar, toque as teclas para fazer a trilha.';
+  $('#b-reset').onclick = () => { if (confirm(((window.NMS_I18N || {})[window.WFM_LANG] || {}).s_ask || 'Erase the simulator memory and restart?')) W.resetFlash(); };
+  $('#b-midi').onclick = async () => { try { const n = await W.midiOn(); $('#o-midi').textContent = n ? n + ' MIDI input(s) on' : (((window.NMS_I18N || {})[window.WFM_LANG] || {}).s_noM || 'no MIDI device found'); $('#b-midi').classList.add('on'); } catch (e) { $('#o-midi').textContent = String(e.message || e); } };
+  const apply = (l) => { const D = window.NMS_I18N || {}, d = D[l] || {}, en = D.en || {}; document.documentElement.lang = (window.NMS_LANGS || {})[l] || 'en'; document.querySelectorAll('[data-i]').forEach((e) => { const k = e.dataset.i, v = d[k] || en[k]; if (v && !(k === 's_on' && W.on)) e.innerHTML = v; }); };
+  apply(window.WFM_LANG);
+  addEventListener('message', (e) => { if (e.data && e.data.nmsLang) { window.WFM_LANG = e.data.nmsLang; apply(e.data.nmsLang); } });
+  if (document.documentElement.classList.contains('embed') && parent !== window) {   // (the frame grows with the page: no scroll inside it)
+    const post = () => parent.postMessage({ simHeight: document.documentElement.scrollHeight }, '*');
+    new ResizeObserver(post).observe(document.body); addEventListener('load', post); post();
   }
-  addEventListener('wfm-armed', (e) => { $('#armed').textContent = 'arrows ↑↓ turn ' + e.detail.toUpperCase(); });
+  addEventListener('wfm-armed', (e) => { $('#armed').textContent = (((window.NMS_I18N || {})[window.WFM_LANG] || {}).s_arw || 'arrows ↑↓ turn') + ' ' + e.detail.toUpperCase(); });
 })();
 </script>
 </body>

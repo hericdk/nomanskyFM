@@ -71,6 +71,41 @@ static void slc_user_scan(uint32_t k, int valid);   /* eng_slice.c: SLICE's slic
 #endif
 static uint32_t smp_user_gen;                       /* + 1 per slot scan (GRAIN: its seek index follows uploads) */
 
+/* (the mini editor) a one-sound slot, decoded once when it becomes valid: the decoder state before each 128th
+ * (bit 31 set: the table is there) and the loudest of each of 240 columns (the WAVE page's picture) */
+static uint32_t usr_grid[SMP_USER_SLOTS][128];
+static uint8_t usr_peak[SMP_USER_SLOTS][240];
+static void smp_user_map(uint32_t k)
+{
+    const smp_zone_t *z = &usr_zone[k][0];
+    uint32_t pos, g = 0, n = z->n;
+    int32_t pred = 0, idx = 0;
+    usr_grid[k][0] = 0;
+    for (pos = 0; pos < 240u; pos++)
+        usr_peak[k][pos] = 0;
+    if (usr_nz[k] != 1u || n < 256u)
+        return;
+    for (pos = 0; pos < n; pos++) {
+        uint32_t b = SMP_DATA[z->off + (pos >> 1)], code = (pos & 1u) ? (b >> 4) : (b & 15u), c = pos * 240u / n, a;
+        int32_t step = IMA_STEP[idx], vd = step >> 3;
+        if (g < 128u && pos == (g * n) >> 7)
+            usr_grid[k][g++] = (uint32_t)(uint16_t)pred | (uint32_t)idx << 16 | 0x80000000u;
+        if (code & 4u)
+            vd += step;
+        if (code & 2u)
+            vd += step >> 1;
+        if (code & 1u)
+            vd += step >> 2;
+        pred = clamp(pred + ((code & 8u) ? -vd : vd), -32768, 32767);
+        idx = clamp(idx + IMA_IDX[code & 7u], 0, 88);
+        a = (uint32_t)(pred < 0 ? -pred : pred) >> 7;
+        if (a > usr_peak[k][c])
+            usr_peak[k][c] = (uint8_t)(a > 255u ? 255u : a);
+        if (!(pos & 0x3FFFu))
+            fm1_wdt_feed();
+    }
+}
+
 /* (re)read slot k from flash: valid header -> zones usable; call after boot and after an upload
  * (main loop: SLICE scans the slot's audio here) */
 /* a zone of a slot header usable (inside the slot's data, well formed) */
@@ -86,6 +121,7 @@ static void smp_user_scan(uint32_t k)
     uint32_t i, base;
     smp_user_gen++;
     usr_nz[k] = 0;                                  /* (from here no new voice takes the slot) */
+    usr_grid[k][0] = 0;
     slc_user_scan(k, 0);
     if (h->magic != SMP_USER_MAGIC || h->version != 1 || !h->nz || h->nz > 16u ||
         h->data_len > SMP_USER_SIZE - SMP_USER_DATA)
@@ -102,6 +138,7 @@ static void smp_user_scan(uint32_t k)
         usr_zone[k][i] = zs[i];
     usr_nz[k] = h->nz;
     fm1_irq_on();
+    smp_user_map(k);
     slc_user_scan(k, 1);
 }
 
@@ -112,7 +149,7 @@ static inline const smp_zone_t *smp_zone(uint32_t zi)
 }
 
 /* voice: ph[0] position (samples), ph[1] fraction Q16, s[0] predictor, s[1] step
- * index, s[2] previous sample, s[3] current sample, s[4] zone, s[5] step Q16 */
+ * index, s[2] previous sample, s[3] current sample, s[4] zone, s[5] (UNISON) output samples before it starts */
 static inline int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
 {
     uint32_t pos = v->ph[0], b = SMP_DATA[z->off + (pos >> 1)];
@@ -138,7 +175,8 @@ static inline int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
 
 static void sample_note_on(track_t *t, voice_t *v)
 {
-    uint32_t si = (uint32_t)t->p[P_E0] % SMP_NALL, i, zi = 0xFFFFu;
+    uint32_t si = (uint32_t)t->p[P_E0] % SMP_NALL, i, zi = 0xFFFFu, in = 0, hit = 0;
+    int32_t ipr = 0, iix = 0;
     if (si < SMP_NSETS) {
         const smp_set_t *set = &SMP_SETS[si];
         for (i = 0; i < set->nz; i++)
@@ -151,28 +189,65 @@ static void sample_note_on(track_t *t, voice_t *v)
             if (v->note >= usr_zone[k][i].lo && v->note <= usr_zone[k][i].hi)
                 zi = 0x8000u | k << 5 | i;
         v->s[4] = (int32_t)(zi == 0xFFFFu ? 0 : zi);
+        /* (the mini editor) IN: a one-sound slot (the ½ sampler's) starts at a 128th of it, from the
+         * decoder state kept there (usr_grid); OUT (render) cuts the end */
+        if (zi != 0xFFFFu && usr_nz[k] == 1u && t->p[P_E5] > 0 && usr_grid[k][0]) {
+            uint32_t g = usr_grid[k][(uint32_t)t->p[P_E5] & 127u];
+            in = ((uint32_t)t->p[P_E5] * usr_zone[k][0].n) >> 7;
+            ipr = (int16_t)(g & 0xFFFFu), iix = (int32_t)((g >> 16) & 0xFFu), hit = 1;
+        }
     }
     v->ph[0] = 0;
     v->ph[1] = 0;
     v->s[0] = 0;
     v->s[1] = 0;
     v->s[2] = v->s[3] = 0;
+    v->s[5] = 0;                 /* (after Clipper 1.2) no start delay (UNISON: sample_spread) */
     v->s[6] = zi == 0xFFFFu;     /* 1 = sample ended (one-shot); a kit key with no sound stays silent */
     v->s[7] = 0;                 /* lo-pass state */
+    if (hit)
+        v->ph[0] = in, v->s[0] = ipr, v->s[1] = iix;
 }
 
+#ifndef SMP_STEP_MAX
+#define SMP_STEP_MAX (8u << 16)   /* decodes an output sample at most (a 44.1 kHz zone 3 octaves up: 8, the cost bound as before) */
+#endif
 static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
     const int16_t *p = t->p;
     const smp_zone_t *z = smp_zone((uint32_t)v->s[4]);
     uint32_t i, frac = v->ph[1];
-    int32_t d16 = clamp(m->pitch16 + p[P_E1] * 16 - z->root16, -1536, 576);   /* <= 3 octaves up: bounded decode load */
+    int32_t d16 = clamp(m->pitch16 + p[P_E1] * 16 - z->root16, -1536, 1536);
     uint32_t r = pow2_q16(d16), stepq = (r >> 8) * (z->rate >> 8);   /* Q16 samples per output */
+    uint32_t lim = (pow2_q16(576) >> 8) * (z->rate >> 8);   /* the decode load bounded: 3 octaves up, or SMP_STEP_MAX
+                                                         * source samples an output sample if that is more (a 16 kHz
+                                                         * set, one zone: its pitch went flat 3 octaves over its root) */
     int32_t bits = p[P_E2], lp = 4000 + ((clamp((p[P_E4] << 8) + m->cutoff, 0, 127 << 8) * 28767) >> 15);
     int32_t drv = p[P_E6], sh = bits / 10;
+    uint32_t uk = ((uint32_t)v->s[4] >> 5) & 3u, endn = z->n;
+    int one = (uint32_t)v->s[4] >= 0x8000u && usr_nz[uk] == 1u && usr_grid[uk][0];   /* (a ½ sampler slot) */
+    if (one && p[P_E7] > 0)
+        endn = z->n - (z->n >> 7) * (uint32_t)p[P_E7];   /* (the mini editor) OUT: that many 128ths cut from the end */
+    vmod_t m0;
+    if (stepq > (lim > SMP_STEP_MAX ? lim : SMP_STEP_MAX))
+        stepq = lim > SMP_STEP_MAX ? lim : SMP_STEP_MAX;
     if (v->s[6] || !z->n) {
         v->active = 0;
         return;
+    }
+    if (v->s[5]) {                                    /* (after Clipper 1.2) UNISON: this voice starts later */
+        if ((uint32_t)v->s[5] >= n) {
+            v->s[5] -= (int32_t)n;
+            return;
+        }
+        i = (uint32_t)v->s[5];                        /* within this block: the rest of it, its level ramp as it was */
+        v->s[5] = 0;
+        m0 = *m;
+        m0.amp0 = amp_at(m, i);
+        m0.amp1 = m0.amp0 + (m->amp1 - m->amp0);
+        m = &m0;
+        out += i;
+        n -= i;
     }
     if (v->ph[0] == 0 && v->ph[1] == 0 && v->s[3] == 0)
         v->s[3] = sample_next(z, v, p[P_E3]);         /* prime the interpolator */
@@ -182,7 +257,14 @@ static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
         while (frac >= 65536u) {
             frac -= 65536u;
             v->s[2] = v->s[3];
-            if (v->ph[0] >= z->n) {                   /* one-shot reached its end */
+            if (v->ph[0] >= endn && one && p[P_E3] && (p[P_E5] || p[P_E7]) && !z->looped && v->gate) {   /* (the mini editor)
+                                                         * LOOP on a one-shot slot trimmed there: IN..OUT again while the
+                                                         * key is held (untrimmed, it plays as it always did) */
+                uint32_t g = usr_grid[uk][(uint32_t)p[P_E5] & 127u];
+                v->ph[0] = ((uint32_t)p[P_E5] * z->n) >> 7;
+                v->s[0] = (int16_t)(g & 0xFFFFu), v->s[1] = (int32_t)((g >> 16) & 0xFFu);
+            }
+            if (v->ph[0] >= endn) {                   /* one-shot reached its end (or OUT) */
                 v->s[6] = 1;
                 v->s[3] = 0;
                 break;
@@ -203,6 +285,26 @@ static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
 }
 
 
+/* (after Clipper 1.2) UNISON (voice.c unison_spread): the voice starts r (Q32) of four periods of the pitch it
+ * sounds later (s[5]: output samples of silence first; nothing decoded, per note): every voice read the same samples
+ * from the same start, in phase (+9 dB over POLY). Four: a sample may sound lower than its key says (UP BASS: two
+ * octaves). At most the time of 256 source samples (~6 .. 12 ms at its root) and of a quarter of the zone */
+static void sample_spread(track_t *t, voice_t *v, uint32_t r)
+{
+    const int16_t *p = t->p;
+    const smp_zone_t *z = smp_zone((uint32_t)v->s[4]);
+    int32_t d16 = clamp(v->pitch16 + p[P_E1] * 16 - z->root16, -1536, 1536);
+    uint32_t stepq = (pow2_q16(d16) >> 8) * (z->rate >> 8);   /* Q16 source samples an output sample */
+    uint32_t b = pitch_inc((uint32_t)clamp(v->pitch16 + p[P_E1] * 16, 0, 2047));   /* the pitch it sounds (TUNE) */
+    uint32_t d, q;                                    /* (32-bit divides: two a voice, per note) */
+    if (v->s[6] || !z->n || !b || !stepq || v->ph[0] || v->ph[1])
+        return;
+    d = (0xFFFFFFFFu / b) << 2;                       /* four periods (output samples; < 21600 at pitch 0) */
+    q = ((z->n >> 2 < 256u ? z->n >> 2 : 256u) << 16) / stepq;   /* the time of 256 source samples */
+    v->s[5] = (int32_t)(((d < q ? d : q) * (r >> 16)) >> 16);   /* x r (the span shortened, not clamped: a clamp */
+                                                                 /* gave many voices the same start) */
+}
+
 static const engine_t ENG_SAMPLE = {
     "SAMPLE", {"SET", "TONE"},
     {
@@ -211,9 +313,9 @@ static const engine_t ENG_SAMPLE = {
         {"BITS", F_INT, 0, 127, 0, 0, 0},
         {"LOOP", F_ENUM, 0, 1, 1, N_ONOFF_E, 0},
         {"CUT", F_INT, 0, 127, 127, 0, 0},
-        {"-", F_INT, 0, 0, 0, 0, 0},
+        {"IN", F_INT, 0, 127, 0, 0, 0},              /* (the mini editor, WAVE) the start, in 128ths of a USR slot */
         {"DRV", F_PCT, 0, 127, 0, 0, 0},
-        {"-", F_INT, 0, 0, 0, 0, 0},
+        {"OUT", F_INT, 0, 127, 0, 0, 0},             /* .. and how many 128ths are cut from its end */
     },
     SMP_PRESET_TABLE, sizeof(SMP_PRESET_TABLE) / sizeof(SMP_PRESET_TABLE[0]), -1, sample_note_on, sample_render,
     0xFFFF, {P_E0, P_E4, P_ATK, P_REL},

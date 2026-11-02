@@ -6,7 +6,8 @@
  *   EDIT  erase that sound / note (seq.c)  knobs: SHIFT  LENGTH x2 / half  TRANSPOSE   OCT- undo  OCT+ redo
  *   ARP   note repeat (seq.c roll)         knobs: RATE
  *   SEQ   steps 1..16 of the page          knobs: SOUND / NOTE  DIV  SWING  LENGTH;  a step key held:
- *         (black keys 1..4: pages)                SOUND / NOTE  LEVEL  RATCHET  NUDGE, PRESETS the value of a
+ *         (black keys 1..4 or OCT- / OCT+: pages; SOUND / NOTE  LEVEL  RATCHET  NUDGE, PRESETS the value of a
+ *         2.7.1, the drum track: the black keys pick the sound, ui_studio.c drum_black_pick, OCT the pages)
  *                                                 parameter lock, ALGORITHM its parameter (the sound parameter
  *                                                 last touched first); OCT+ cycles the step's fill condition
  *                                                 (normal, fill only, no fill), OCT- clears its nudge, locks and
@@ -27,8 +28,11 @@ static uint8_t sec_armed;                               /* store over a used sec
 static uint32_t sec_armed_ms;
 static uint8_t chain_tap[CHAIN_MAX], chain_taps;        /* the section keys tapped in this SAVE hold (the first
                                                          * is asked for at once; two or more: a chain on release) */
-#define TAP_MS 450u                                     /* a press shorter than this, untouched: a tap */
-#define SHOW_MS 140u                                    /* the layer shows after this (a tap does not flash it) */
+#define TAP_MS 1000u                                    /* a press shorter than this, untouched: a tap (after 2.8.3: was
+                                                         * 0.45 s: a firm press of FX, EDIT, ARP, SEQ, SEL, GLO or SAVE opened
+                                                         * nothing, the layer flashed and HOME stayed; clipper-fm1 #24) */
+#define SHOW_MS 350u                                    /* the layer shows after this (a tap does not flash it; 2.8.3: was 0.14 s,
+                                                         * a quick tap flashed it; a key or knob used shows it at once) */
 
 /* the ISR's view of the panel: the layers' buttons, OCT- / OCT+, REC / PLAY of a free take */
 UI_SMALL static void layers_init(void)
@@ -168,7 +172,7 @@ UI_SMALL static void pen_lane_move(int32_t s)
 {
     uint8_t l = (uint8_t)clamp(pen_lane + s, 0, DRUM_LANES - 1);
     if (l != pen_lane)
-        audition_lane(l);
+        drum_hear(l);                                   /* (2.7.1: menu DRUM PREVIEW ON only) */
     pen_lane = l;
 }
 /* KNOB 1..4 with step keys held: their sound / note (drums: the sound's lane; synth: every note), level,
@@ -334,7 +338,13 @@ UI_SMALL static void layer_key(uint32_t layer, uint32_t k, uint32_t down)
     }
     switch (layer) {
     case LY_STEP:
-        if (w < 0) {                                    /* the first four black keys: pages 1..4 */
+        if (w < 0 && is_drum(TSEL)) {                   /* (2.7.1) the drum track: a black key picks the sound, unheard */
+            int32_t b = drum_black_of(k);
+            if (b >= 0)
+                drum_black_pick((uint32_t)b);
+            return;
+        }
+        if (w < 0) {                                    /* the first four black keys: pages 1..4 (OCT- / OCT+ too) */
             static const int8_t PG[12] = {-1, 0, -1, 1, -1, 2, -1, -1, 3, -1, -1, -1};
             if (k < 12u && PG[k] >= 0 && (uint32_t)PG[k] * 16u < trk_len(TSEL))
                 ui.step_page = (uint8_t)PG[k];
@@ -550,5 +560,10 @@ UI_SMALL static void layer_knobs(uint32_t layer)
         default:
             break;
         }
+    }
+    if (layer == LY_FX && (s = panel_enc(EN_SELECT)) != 0) {   /* (2.7.2) SELECT: the punch-in FX fade (GLO > ... ), not the
+                                                               * tempo while FX is held; shown top right (layer_screen_draw) */
+        song.g[G_FXFADE] = (int16_t)clamp(song.g[G_FXFADE] + s, 0, 15);
+        ui.layer_used = 1;
     }
 }

@@ -12,16 +12,17 @@ enum { MI_LIGHTS, MI_KEYS, MI_NOTES, MI_LEDFX, MI_LEDSP, MI_LEDFD, MI_LEDHOLD, M
 #if FELUCCA_CDC
        MI_SERIAL,
 #endif
-       MI_VZNOTE, MI_ACCEL, MI_CPU1, MI_PANEL, MI_LCLEAR, MI_ABOUT, MI_COUNT };
+       MI_VZNOTE, MI_ACCEL, MI_ADV, MI_DPREV, MI_FRESO, MI_CPU1, MI_PANEL, MI_LCLEAR, MI_ABOUT, MI_COUNT };
 static const char *const MI_NAME[MI_COUNT] = {"LIGHTS", "KEYS", "NOTES", "KEY LED", "LED SPEED", "LED FADE",
                                               "LED WHILE HELD", "SPEAKER LOWCUT", "USB AUDIO", "USB RATE",
 #if FELUCCA_CDC
                                               "USB SERIAL",
 #endif
-                                              "NUMBERS OVER VISUAL", "KNOB ACCEL", "2ND CORE",
+                                              "NUMBERS OVER VISUAL", "KNOB ACCEL", "STEP ADVANCE", "DRUM PREVIEW",
+                                              "FILTER RESO", "2ND CORE",
                                               "HARDWARE CALIBRATION", "MIDI LEARN CLEAR", "ABOUT"};
-enum { MS_LIGHTS, MS_LED, MS_AUDIO, MS_VISUAL, MS_SYSTEM, MS_COUNT };
-static const uint8_t MS_FIRST[MS_COUNT + 1] = {MI_LIGHTS, MI_LEDFX, MI_LOWCUT, MI_VZNOTE, MI_CPU1, MI_COUNT};   /* rows of each */
+enum { MS_LIGHTS, MS_LED, MS_AUDIO, MS_VISUAL, MS_SEQ, MS_SYSTEM, MS_COUNT };   /* (2.8.4: SEQ) */
+static const uint8_t MS_FIRST[MS_COUNT + 1] = {MI_LIGHTS, MI_LEDFX, MI_LOWCUT, MI_VZNOTE, MI_ADV, MI_CPU1, MI_COUNT};   /* rows of each */
 static int mi_cpu1_have(void)                           /* the second core is running (cpu1.c) */
 {
 #if FELUCCA_CPU1
@@ -59,7 +60,16 @@ static const char *mi_value(uint32_t i)
         static const char *const R[3] = {"AUTO", "44.1 KHZ", "48 KHZ"};
         return R[usb_rate % 3u];
     }
-    case MI_ACCEL: return knob_accel_off ? "OFF" : "ON";   /* (2.7) the knobs speed up with a fast turn */
+    case MI_ACCEL: return knob_accel_off ? "OFF" : "ON";
+    case MI_ADV: return step_adv_off ? "OFF" : "ON";      /* (2.7.1) the step cursor moves on when the keys are let go */
+    case MI_DPREV: return drum_preview ? "ON" : "OFF";     /* (2.7.1) a drum sound picked with a knob is heard */
+    case MI_FRESO: {                                  /* (2.7.2) the track filter's resonance, 0 (clean) .. 10 (fx.c) */
+        static char b[4];
+        if (!flt_reso)
+            return "OFF";
+        fmt_int(b, flt_reso > 10u ? 10 : flt_reso);
+        return b;
+    }   /* (2.7) the knobs speed up with a fast turn */
     case MI_CPU1: return cpu1_off ? "OFF" : mi_cpu1_have() ? "ON" : "ON (OFF NOW)";   /* (2.7) the sound on both cores */
     case MI_LEDFX: return LED_NAME[led_opt(0) % 6u];
     case MI_LEDSP:
@@ -136,6 +146,20 @@ static void mi_set(uint32_t i, int32_t s)
         break;
     case MI_ACCEL:                                     /* (2.7) right ON, left OFF; OCT+ toggles */
         knob_accel_off = (uint8_t)(s > 0 ? 0u : s < 0 ? 1u : !knob_accel_off);
+        break;
+    case MI_ADV:                                       /* (2.7.1) right ON, left OFF; OCT+ toggles */
+        step_adv_off = (uint8_t)(s > 0 ? 0u : s < 0 ? 1u : !step_adv_off);
+        break;
+    case MI_DPREV:
+        drum_preview = (uint8_t)(s > 0 ? 1u : s < 0 ? 0u : !drum_preview);
+        break;
+    case MI_FRESO:                                     /* (2.7.2) 0 (OFF) .. 10, stops at the ends; OCT+ steps round */
+        if (s > 0 && flt_reso < 10u)
+            flt_reso++;
+        else if (s < 0 && flt_reso > 0u)
+            flt_reso--;
+        else if (!s)
+            flt_reso = (uint8_t)(flt_reso >= 10u ? 0u : flt_reso + 1u);
         break;
     case MI_CPU1:                                      /* (2.7) right ON, left OFF; at once */
         cpu1_off = (uint8_t)(s > 0 ? 0u : s < 0 ? 1u : !cpu1_off);

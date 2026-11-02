@@ -40,8 +40,8 @@ GENDIR = SRC / "build" / "genwav"
 CACHE = SRC / "build" / "gen_samples.cache"
 CC0 = SRC / "assets" / "samples-cc0"
 TR = 22050                                   # stored sample rate
-SET_RATE = {"PIANO": 16000, "HORNS": 16000, "STRGS": 16000, "FLUTE": 16000, "SCRCH": 16000}   # (No Man Sky FM: room for the
-                                             # battle; only the top is lost. BASS and the kit as they were)
+SET_RATE = {"PIANO": 16000, "BASS": 16000, "HORNS": 16000, "STRGS": 16000, "FLUTE": 16000, "SCRCH": 11025}   # (No Man Sky FM: room for the
+                                             # battle and, 0.6, the 3D planet; only the top is lost. SCRCH at 11 kHz)
 
 # set -> kind ("oneshot" decaying, "sus" looped sustain, "piano" its attack then a steady loop that the
 # envelope fades, "kit" one sample per key).
@@ -92,7 +92,7 @@ GM_ROLE_WORDS = [("bassdrum", "kick"), ("kick", "kick"), ("snare", "snare"), ("h
                  ("conga", "conga"), ("claves", "claves"), ("wood", "wood"), ("crash", "crash"), ("ride", "ride")]
 GM_KEEP = {"crash": 0.6, "ride": 0.6, "ohh": 0.6}   # (SLOOP 2.5: the cymbals 1.0 -> 0.6 s, 12.8 KB of flash back;
                                                       # the first 0.44 s as recorded, then a fade: GM_FADE)
-GM_RATE = {"chh": 22050, "ohh": 22050, "crash": 22050, "ride": 22050}   # the metal at 22 kHz too (No Man Sky FM: the flash for the screens; 32 kHz before)
+GM_RATE = {"chh": 16000, "ohh": 16000, "crash": 16000, "ride": 16000}   # the metal at 16 kHz (No Man Sky FM 0.6: the flash for the 3D planet and 2.8.4; 22 kHz before, 32 before that)
 # an acoustic kit from the CC0 recordings (assets/samples-cc0/KIT: VCSL): the concert bass drum and the toms
 # get a shorter body (a kit's tuned-up, damped heads): their level falls as exp(-t / tau) after a hold
 GM_SHAPE = {"kick": (0.03, 0.13), "tomlo": (0.04, 0.22), "tomhi": (0.04, 0.2)}

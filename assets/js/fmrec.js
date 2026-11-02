@@ -26,7 +26,7 @@
     busy: { pt: 'Gerando…', en: 'Rendering…', es: 'Generando…' },
     min: { pt: 'Recolher', en: 'Collapse', es: 'Contraer' },
   };
-  const t = (k) => (S[k] && (S[k][L] || S[k].en)) || k;
+  const t = (k) => ((window.NMS_REC || {})[L] || {})[k] || (S[k] && (S[k][L] || S[k].en)) || k;
   const IC = {                                                          /* pixel icons, 12 x 12, centred */
     play: '<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><path d="M3 1h2v1h1v1h1v1h1v1h1v2h-1v1h-1v1h-1v1h-1v1h-2z"/></svg>',
     pause: '<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><path d="M2 1h3v10h-3zM7 1h3v10h-3z"/></svg>',
