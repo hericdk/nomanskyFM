@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")"
 ROOT=$(pwd)
 "${PYTHON:-/usr/bin/python3}" -c "import sys; sys.path.insert(0, '$ROOT/tools'); import build; build.generate()" >/dev/null
-"${PYTHON:-/usr/bin/python3}" -m ziglang cc --target=wasm32-freestanding -O2 -fno-builtin -ffreestanding -nostdlib -w \
+"${PYTHON:-/usr/bin/python3}" -m ziglang cc --target=wasm32-freestanding -O2 -s -fno-builtin -ffreestanding -nostdlib -w \
   -I "$ROOT/build/gen" -I "$ROOT/firmware/src" -I wasm \
   -Wl,--no-entry -Wl,--export-memory -Wl,-z,stack-size=1048576 -Wl,--global-base=1048576 \
   -o build/nms.wasm wasm/nms_wasm.c

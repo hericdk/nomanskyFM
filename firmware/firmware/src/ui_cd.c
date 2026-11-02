@@ -2,7 +2,7 @@
  * kit) the screen shows the sounds as CDs in a carousel, the old one rolling out and the new one rolling in, then goes back to what was there.
  * After winampFM's TAPES (ui_winamp.c wt_make / wt_quad): the same 42 models' colours, taken in the same shuffled order, the same PS1 look
  * (low resolution, affine texture, a dithered shade on the far side, the ones behind see-through); here a CD instead of a cassette.
- * The art is made in code into a 64 x 64 texture (cd_make) and drawn as a turning disc (cd_quad). Documented in CDS.md */
+ * The art is made in code into a 64 x 64 texture (cd_make) and drawn as a turning disc (cd_quad). */
 #define CD_T 64
 #define CD_HOLD 1500u                        /* the screen stays this long after the last change */
 #define CD_IN 320u                           /* it comes up ... */
